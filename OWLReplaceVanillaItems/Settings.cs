@@ -9,18 +9,13 @@ namespace OWLReplaceVanillaItems
     {
         [SynthesisOrder]
         [SynthesisSettingName("Only these plugins")]
-        [SynthesisTooltip("Patch only these plugins' records. Empty: every plugin in the load order but Open World Loot's own plugins (every plugin with Open World Loot in its name), its masters (the base game and the Creation Club plugins it requires, which its own INIs cover), the plugins below and, with the next setting on, the plugins Open World Loot already has patches for. A plugin listed here is patched even if it is one of those, Open World Loot's own plugins excepted.")]
+        [SynthesisTooltip("Patch only these plugins' records. Empty: every plugin in the load order but Open World Loot's own plugins (every plugin with Open World Loot in its name), its masters (the base game and the Creation Club plugins it requires, which its own INIs cover) and the plugins below. A plugin listed here is patched even if it is one of Open World Loot's masters. Plugins Open World Loot already has patches for are patched too, around what those patches do: records they clear, and items they replace or remove, are left to them.")]
         public List<ModKey> OnlyPlugins { get; set; } = new();
 
         [SynthesisOrder]
         [SynthesisSettingName("Leave out these plugins")]
         [SynthesisTooltip("Plugins whose records are never patched.")]
         public List<ModKey> SkippedPlugins { get; set; } = new();
-
-        [SynthesisOrder]
-        [SynthesisSettingName("Leave out plugins Open World Loot has patches for")]
-        [SynthesisTooltip("Leave out a plugin when a SkyPatcher INI named after it (Plugin.esp.ini) is already in one of Open World Loot's folders (SKSE\\Plugins\\SkyPatcher\\<type>\\OWL\\...), from Open World Loot or another mod: it is patched there already. INIs written by this patcher or by the xEdit scripts OWL_Replace_Vanilla_Items.pas and OWL_Add_Items_To_Lists.pas do not count.")]
-        public bool SkipPluginsWithOwlPatches { get; set; } = true;
 
         [SynthesisOrder]
         [SynthesisSettingName("Leveled lists")]

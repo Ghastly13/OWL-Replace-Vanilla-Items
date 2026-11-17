@@ -83,14 +83,40 @@ namespace OWLReplaceVanillaItems
             Log("Open World Loot hands out " + owl.Targets.Count + " items through " + owl.Lists.Count + " lists.");
             if (owl.Targets.Count == 0) return;
 
-            var plugins = PluginsToPatch(state, settings, inis, owlMod, Log);
+            var plugins = PluginsToPatch(state, settings, owlMod, Log);
             var wearers = settings.Outfits && settings.SkipOutfitsOfUniqueNpcs ? new UniqueWearers(state) : null;
             if (wearers != null) Log("Unique NPCs wear " + wearers.OutfitCount + " outfits: those are not patched.");
+            var existing = new ExistingPatches(state, inis.SkyPatcherFolder, inis.OtherInis);
+            Log("Read " + existing.FilesRead + " SkyPatcher INIs in Open World Loot's folders (Open World Loot's and patches for other mods): "
+                + existing.RecordsCleared + " records they clear and " + existing.RecordsWithItems + " they replace or remove items in are left to them"
+                + (existing.LinesNotNamingRecords > 0 ? " (" + existing.LinesNotNamingRecords + " of their lines name no records by form or EditorID, and are not read)" : "") + ".");
             var refs = new SkyPatcherRefs(state, settings.UseEditorIDs);
             var outputs = new SortedDictionary<(string Folder, string Plugin), Output>();
-            int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0;
+            int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0, deferredCount = 0;
 
             string ItemID(FormKey item) => linkCache.TryResolve<IItemGetter>(item, out var found) && found.EditorID != null ? found.EditorID : item.ToString();
+
+            // The item's keywords, for patches that remove items by keyword
+            IEnumerable<FormKey> KeywordsOf(FormKey item)
+            {
+                IEnumerable<IFormLinkGetter<IKeywordGetter>>? keywords = null;
+                if (linkCache.TryResolve<IWeaponGetter>(item, out var weapon)) keywords = weapon.Keywords;
+                else if (linkCache.TryResolve<IArmorGetter>(item, out var armor)) keywords = armor.Keywords;
+                else if (linkCache.TryResolve<IAmmunitionGetter>(item, out var ammo)) keywords = ammo.Keywords;
+                return keywords?.Select(k => k.FormKey) ?? Enumerable.Empty<FormKey>();
+            }
+
+            // The INI an existing patch handles the item in the record with: clearing the record, or replacing or removing
+            // the item (by form or keyword). Null when none does
+            string? HandledBy(ExistingPatches.RecordPatch? patch, FormKey item)
+            {
+                if (patch == null) return null;
+                if (patch.ClearedBy != null) return patch.ClearedBy;
+                if (patch.Items.TryGetValue(item, out var file)) return file;
+                foreach (var keyword in KeywordsOf(item))
+                    if (patch.Keywords.TryGetValue(keyword, out file)) return file;
+                return null;
+            }
 
             // Replaces the OWL-listed items in one record of the plugin. original gives the items of the record's original
             // (the plugin that adds it), read only for a record the plugin overrides
@@ -103,6 +129,9 @@ namespace OWLReplaceVanillaItems
                 bool originalRead = false;
                 var done = new HashSet<FormKey>();
                 var skipped = new List<string>();
+                var patch = existing.For(record.FormKey);
+                // INI -> the items left to it in this record
+                var deferred = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var item in items)
                 {
                     if (item.IsNull || !owl.Targets.TryGetValue(item, out var target) || !done.Add(item)) continue;
@@ -126,6 +155,13 @@ namespace OWLReplaceVanillaItems
                             continue;
                         }
                     }
+                    if (HandledBy(patch, item) is string file)
+                    {
+                        if (!deferred.TryGetValue(file, out var left)) deferred[file] = left = new List<string>();
+                        left.Add(itemID);
+                        deferredCount++;
+                        continue;
+                    }
                     string line = kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[target]);
                     if (!outputs.TryGetValue((kind.Folder, plugin), out var output)) outputs[(kind.Folder, plugin)] = output = new Output();
                     if (output.Seen.Add(line))
@@ -136,6 +172,8 @@ namespace OWLReplaceVanillaItems
                     Log("  " + label + ": " + itemID + " -> " + target);
                     replacedCount++;
                 }
+                foreach (var (file, left) in deferred)
+                    Log("  left to " + file + ": " + string.Join(", ", left) + " in " + label + (patch?.ClearedBy == file ? ", which it clears" : ", which it replaces or removes there"));
                 if (skipped.Count > 0)
                 {
                     Log("  skipped " + label + ", " + skipReason + ": " + string.Join(", ", skipped) + " left as they are");
@@ -188,12 +226,13 @@ namespace OWLReplaceVanillaItems
                         Log("NOTE: " + file + " was written by the xEdit script OWL_Replace_Vanilla_Items.pas for " + plugin + ". This patcher's INIs replace it: remove it, or its lines (any for unique NPCs included) keep applying.");
 
             Log(replacedCount + " vanilla items replaced by OWL lists in " + recordCount + " records of " + patched.Count + " plugins, "
-                + keptCount + " kept because the original record has them, " + uniqueCount + " unique NPCs and "
-                + outfitSkipCount + " outfits unique NPCs wear skipped (all listed above).");
+                + keptCount + " kept because the original record has them, " + deferredCount + " left to the patches in Open World Loot's folders, "
+                + uniqueCount + " unique NPCs and " + outfitSkipCount + " outfits unique NPCs wear skipped (all listed above).");
         }
 
-        // The plugins whose records are patched, in load order
-        private static List<ISkyrimModGetter> PluginsToPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state, Settings settings, IniFiles inis, ISkyrimModGetter owlMod, Action<string> Log)
+        // The plugins whose records are patched, in load order. Plugins Open World Loot already has patches for are patched
+        // too, around what those patches do (ExistingPatches)
+        private static List<ISkyrimModGetter> PluginsToPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state, Settings settings, ISkyrimModGetter owlMod, Action<string> Log)
         {
             var only = new HashSet<ModKey>(settings.OnlyPlugins);
             var skipped = new HashSet<ModKey>(settings.SkippedPlugins);
@@ -215,11 +254,6 @@ namespace OWLReplaceVanillaItems
                     continue;
                 }
                 if (owlMasters.Contains(key)) continue;
-                if (settings.SkipPluginsWithOwlPatches && inis.OwlPatches.TryGetValue(key.FileName, out var files))
-                {
-                    Log("Left out " + key.FileName + ": Open World Loot's folders already have " + string.Join(", ", files));
-                    continue;
-                }
                 plugins.Add(mod);
             }
             foreach (var key in only.Where(k => state.LoadOrder.TryGetValue(k) == null))

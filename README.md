@@ -25,10 +25,15 @@ holding it that it is named after (`OWL_Armor_Fur_Cuirass_Vanilla` -> `OWL_Armor
 - Enchanted items, uniques and clothing: they are in no OWL list.
 - Open World Loot's own plugins: every plugin with Open World Loot in its name (`Open World Loot.esp`,
   `Open World Loot - Heavy Armory Patch.esp`, ...), whatever the settings say.
-- By default, Open World Loot's masters (the base game and the Creation Club plugins it requires, which its own INIs
-  cover), and plugins Open World Loot already has patches for: a `Plugin.esp.ini` in one of its folders
-  (`SKSE\Plugins\SkyPatcher\<type>\OWL\...`), from Open World Loot or another mod. INIs written by this patcher or by the
-  xEdit scripts `OWL_Replace_Vanilla_Items.pas` and `OWL_Add_Items_To_Lists.pas` do not count.
+- By default, Open World Loot's masters (the base game and the Creation Club plugins it requires), which its own INIs
+  cover.
+- What the SkyPatcher INIs already in Open World Loot's folders (`SKSE\Plugins\SkyPatcher\<type>\OWL\...`) do, from
+  Open World Loot or patches for other mods: a record one clears gets nothing more, and an item one replaces or removes
+  in a record (by form, by count or by keyword) is not replaced there. Plugins with such patches are patched around them.
+  Only lines that name their records are read: by form (`filterByLLs`, `filterByContainers`, `filterByOutfits`,
+  `filterByNpcs`) or by EditorID (`filterByEditorIdContains`, `...Or`, `...Excluded`). An INI named after a plugin counts
+  only with that plugin active, as SkyPatcher reads it only then. This patcher's own INIs and those of the xEdit script
+  `OWL_Replace_Vanilla_Items.pas`, which they replace, are not read.
 
 Everything replaced, kept and skipped is listed in the Synthesis log and in `OWL replacements.txt` in the patcher's data
 folder.

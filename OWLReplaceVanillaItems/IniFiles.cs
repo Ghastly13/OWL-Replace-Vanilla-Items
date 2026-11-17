@@ -15,14 +15,15 @@ namespace OWLReplaceVanillaItems
         public const string OwnFolder = "OWL Replace Vanilla Items";
         public const string Marker = "Written by the Synthesis patcher OWL Replace Vanilla Items";
         private const string XEditReplace = "OWL_Replace_Vanilla_Items.pas";
-        private const string XEditAdd = "OWL_Add_Items_To_Lists.pas";
         public static readonly string[] TypeFolders = { "leveledList", "container", "outfit", "npc" };
 
         private readonly string _skyPatcher;
 
-        // Plugin file name -> INIs named after it in Open World Loot's folders, from Open World Loot or another mod
-        public Dictionary<string, List<string>> OwlPatches { get; } = new(StringComparer.OrdinalIgnoreCase);
-        // Plugin file name -> INIs the xEdit script OWL_Replace_Vanilla_Items.pas wrote for it
+        public string SkyPatcherFolder => _skyPatcher;
+        // The INIs in Open World Loot's folders, from Open World Loot or patches for other mods (ExistingPatches reads what
+        // they do): every one but this patcher's own and those of the xEdit script OWL_Replace_Vanilla_Items.pas
+        public List<(string Folder, string Path)> OtherInis { get; } = new();
+        // Plugin file name -> INIs the xEdit script OWL_Replace_Vanilla_Items.pas wrote for it, which this patcher replaces
         public Dictionary<string, List<string>> XEditReplacements { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public IniFiles(string dataPath)
@@ -37,15 +38,13 @@ namespace OWLReplaceVanillaItems
                 {
                     if (file.StartsWith(own, StringComparison.OrdinalIgnoreCase)) continue;
                     string plugin = Path.GetFileNameWithoutExtension(file);
-                    if (!IsPluginName(plugin)) continue;
-                    string text = ReadOrEmpty(file);
-                    if (text.Contains(XEditReplace, StringComparison.Ordinal)) Add(XEditReplacements, plugin, file);
-                    else if (!text.Contains(XEditAdd, StringComparison.Ordinal)) Add(OwlPatches, plugin, file);
+                    if (IsPluginName(plugin) && ReadOrEmpty(file).Contains(XEditReplace, StringComparison.Ordinal)) Add(XEditReplacements, plugin, file);
+                    else OtherInis.Add((folder, file));
                 }
             }
         }
 
-        private static bool IsPluginName(string name)
+        public static bool IsPluginName(string name)
         {
             string ext = Path.GetExtension(name);
             return ext.Equals(".esp", StringComparison.OrdinalIgnoreCase) || ext.Equals(".esm", StringComparison.OrdinalIgnoreCase) || ext.Equals(".esl", StringComparison.OrdinalIgnoreCase);
