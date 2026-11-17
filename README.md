@@ -16,6 +16,15 @@ item's EditorID (`SteelDagger` -> `OWL_Weapon_Steel_Dagger`, not `..._Alikr_...`
 holding it that it is named after (`OWL_Armor_Fur_Cuirass_Vanilla` -> `OWL_Armor_Fur_Cuirass`). The map is read from
 `Open World Loot.esp` on every run.
 
+**Outfit lists.** Open World Loot's `OWL_Outfit_<Material>_Simple`, `_NoHelm` and `_Full` lists each pick one of their
+sets, use-all lists of exact pieces (boots and cuirass; with the gauntlets; with the helmet too). Where an outfit holds
+every piece of a set, the pieces are replaced by the set's outfit list: hide boots and hide armor become
+`OWL_Outfit_Hide_Simple`, as one line (`formsToReplace=ArmorHideBoots=OWL_Outfit_Hide_Simple:formsToRemove=
+ArmorHideCuirass`). Larger sets go first; the outfit's other pieces are replaced one by one. Only outfits: in NPC
+inventories, containers and leveled lists every piece is replaced by its own list. A set under several outfit lists goes to the one named after a theme of the record (ThalmorElven for the Thalmor), else the
+one of the set's own material (the Studded sets, also under Scaled, go to Studded), else the one its pieces' slots name.
+Setting "Outfit lists".
+
 **Themed lists.** Open World Loot also has lists for groups, named after them (`OWL_Armor_HideStudded_Cuirass_Stormcloak`,
 `OWL_Weapon_Elven_Sword_Thalmor`, `OWL_Armor_Iron_Cuirass_Town`), which it gives the vanilla gear lists of those groups.
 A record that matches a rule of the "Themed lists: rules" setting gets the theme's list for an item where Open World

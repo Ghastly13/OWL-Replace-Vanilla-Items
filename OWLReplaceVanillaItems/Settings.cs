@@ -38,6 +38,11 @@ namespace OWLReplaceVanillaItems
         public bool Npcs { get; set; } = true;
 
         [SynthesisOrder]
+        [SynthesisSettingName("Outfit lists")]
+        [SynthesisTooltip("Where an outfit holds every piece of one of the sets in Open World Loot's outfit lists, replace the pieces with that outfit list: hide boots and hide armor become OWL_Outfit_Hide_Simple; with the bracers too, OWL_Outfit_Hide_NoHelm; with the helmet as well, OWL_Outfit_Hide_Full. Larger sets first. Only outfits: in NPC inventories, containers and leveled lists pieces are replaced one by one, as are an outfit's other pieces.")]
+        public bool UseOutfitLists { get; set; } = true;
+
+        [SynthesisOrder]
         [SynthesisSettingName("Themed lists")]
         [SynthesisTooltip("Give a record that matches a rule below the rule's Open World Loot list for an item, where Open World Loot has one (OWL_Armor_HideStudded_Cuirass_Stormcloak for a Stormcloak's hide armor), as Open World Loot does for the vanilla gear lists of those groups. An outfit takes the themes every NPC that wears it has; a container those every placed copy has, from its owner and from where it is, or its merchant's.")]
         public bool UseThemedLists { get; set; } = true;

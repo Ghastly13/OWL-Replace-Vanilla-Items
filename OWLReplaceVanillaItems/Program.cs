@@ -34,11 +34,13 @@ namespace OWLReplaceVanillaItems
         }
 
         // How SkyPatcher patches each record type
-        private sealed record Kind(string Signature, string Folder, string Filter, string Op, string Separator);
-        private static readonly Kind LeveledListKind = new("LVLI", "leveledList", "filterByLLs", "formsToReplace", "~");
-        private static readonly Kind ContainerKind = new("CONT", "container", "filterByContainers", "replaceInContainers", "~");
-        private static readonly Kind OutfitKind = new("OTFT", "outfit", "filterByOutfits", "formsToReplace", "=");
-        private static readonly Kind NpcKind = new("NPC_", "npc", "filterByNpcs", "objectsToReplace", "~");
+        // RemoveOp: how a set's other pieces are removed when its first is replaced by an outfit list. Only outfits make
+        // sets: Open World Loot's outfit lists are for outfits
+        private sealed record Kind(string Signature, string Folder, string Filter, string Op, string Separator, string? RemoveOp);
+        private static readonly Kind LeveledListKind = new("LVLI", "leveledList", "filterByLLs", "formsToReplace", "~", null);
+        private static readonly Kind ContainerKind = new("CONT", "container", "filterByContainers", "replaceInContainers", "~", null);
+        private static readonly Kind OutfitKind = new("OTFT", "outfit", "filterByOutfits", "formsToReplace", "=", "formsToRemove");
+        private static readonly Kind NpcKind = new("NPC_", "npc", "filterByNpcs", "objectsToReplace", "~", null);
 
         // The lines written for one plugin and record type
         private sealed class Output
@@ -92,7 +94,9 @@ namespace OWLReplaceVanillaItems
                 + (existing.LinesNotNamingRecords > 0 ? " (" + existing.LinesNotNamingRecords + " of their lines name no records by form or EditorID, and are not read)" : "") + ".");
             var refs = new SkyPatcherRefs(state, settings.UseEditorIDs);
             var outputs = new SortedDictionary<(string Folder, string Plugin), Output>();
-            int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0, deferredCount = 0;
+            int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0, deferredCount = 0, setCount = 0;
+            var sets = settings.UseOutfitLists ? OutfitSets.Build(owlMod, linkCache) : null;
+            if (sets != null) Log("Outfit lists: " + sets.SetCount + " sets of pieces in Open World Loot's outfit lists.");
             // Items given a themed list, per theme; records with items to replace that have a theme, per theme and record type
             var themedItems = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var themedRecords = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -157,25 +161,35 @@ namespace OWLReplaceVanillaItems
 
             // Replaces the OWL-listed items in one record of the plugin. original gives the items of the record's original
             // (the plugin that adds it), read only for a record the plugin overrides
-            void Process(Kind kind, ISkyrimModGetter mod, IMajorRecordGetter record, IEnumerable<FormKey> items, Func<HashSet<FormKey>?> original, string? skipReason, int[]? recordThemes = null)
+            void Process(Kind kind, ISkyrimModGetter mod, IMajorRecordGetter record, IEnumerable<FormKey> items, Func<HashSet<FormKey>?> original, string? skipReason,
+                int[]? recordThemes = null, IReadOnlyDictionary<FormKey, int>? counts = null)
             {
                 string plugin = mod.ModKey.FileName;
-                string label = (record.EditorID ?? record.FormKey.ToString()) + " (" + kind.Signature + ", " + plugin + ")";
+                string recordID = record.EditorID ?? record.FormKey.ToString();
+                string label = recordID + " (" + kind.Signature + ", " + plugin + ")";
                 bool overrides = record.FormKey.ModKey != mod.ModKey;
+                bool setsHere = sets != null && kind.RemoveOp != null;
                 HashSet<FormKey>? originalItems = null;
                 bool originalRead = false;
+                // The OWL-listed items of the record, and every item looked at
                 var done = new HashSet<FormKey>();
+                var seen = new HashSet<FormKey>();
+                // The items free to replace: OWL-listed ones and outfit set pieces nothing keeps
+                var free = new List<FormKey>();
                 var skipped = new List<string>();
                 var patch = existing.For(record.FormKey);
                 // INI -> the items left to it in this record
                 var deferred = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var item in items)
                 {
-                    if (item.IsNull || !owl.Targets.TryGetValue(item, out var target) || !done.Add(item)) continue;
+                    if (item.IsNull || !seen.Add(item)) continue;
+                    bool listed = owl.Targets.ContainsKey(item);
+                    if (!listed && !(setsHere && sets!.IsPiece(item))) continue;
+                    if (listed) done.Add(item);
                     string itemID = ItemID(item);
                     if (skipReason != null)
                     {
-                        skipped.Add(itemID);
+                        if (listed) skipped.Add(itemID);
                         continue;
                     }
                     if (overrides)
@@ -187,18 +201,62 @@ namespace OWLReplaceVanillaItems
                         }
                         if (originalItems != null && originalItems.Contains(item))
                         {
-                            Log("  kept in " + label + ": " + itemID + ", which the original record already has");
-                            keptCount++;
+                            if (listed)
+                            {
+                                Log("  kept in " + label + ": " + itemID + ", which the original record already has");
+                                keptCount++;
+                            }
                             continue;
                         }
                     }
                     if (HandledBy(patch, item) is string file)
                     {
-                        if (!deferred.TryGetValue(file, out var left)) deferred[file] = left = new List<string>();
-                        left.Add(itemID);
-                        deferredCount++;
+                        if (listed)
+                        {
+                            if (!deferred.TryGetValue(file, out var left)) deferred[file] = left = new List<string>();
+                            left.Add(itemID);
+                            deferredCount++;
+                        }
                         continue;
                     }
+                    free.Add(item);
+                }
+
+                Output OutputFor()
+                {
+                    if (!outputs.TryGetValue((kind.Folder, plugin), out var output)) outputs[(kind.Folder, plugin)] = output = new Output();
+                    return output;
+                }
+                void Write(string line, string comment)
+                {
+                    var output = OutputFor();
+                    if (!output.Seen.Add(line)) return;
+                    output.Lines.Add("; " + recordID + ": " + comment);
+                    output.Lines.Add(line);
+                }
+
+                // Outfit sets first: every piece of a set replaced by its outfit list (the first piece replaced, the others
+                // removed), larger sets first
+                var inSets = new HashSet<FormKey>();
+                if (setsHere && free.Count > 1)
+                {
+                    var themeNames = recordThemes?.Select(i => themes!.ThemeName(i)).ToList() ?? new List<string>();
+                    foreach (var (set, list) in sets!.Match(free, counts, themeNames))
+                    {
+                        string pieces = string.Join(", ", set.Pieces.Select(ItemID));
+                        Write(kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(set.Pieces[0]) + kind.Separator + refs.Ref(sets.ListKey(list))
+                            + ":" + kind.RemoveOp + "=" + string.Join(",", set.Pieces.Skip(1).Select(refs.Ref)), pieces + " -> " + list);
+                        Log("  " + label + ": " + pieces + " -> " + list + " (outfit set " + set.EditorID + ")");
+                        inSets.UnionWith(set.Pieces);
+                        setCount++;
+                        replacedCount += set.Pieces.Count(done.Contains);
+                    }
+                }
+
+                foreach (var item in free)
+                {
+                    if (inSets.Contains(item) || !owl.Targets.TryGetValue(item, out var target)) continue;
+                    string itemID = ItemID(item);
                     // The list of the first of the record's themes Open World Loot has one for the item under
                     string list = target;
                     string factionNote = "";
@@ -208,13 +266,7 @@ namespace OWLReplaceVanillaItems
                         factionNote = " (" + theme + ")";
                         themedItems[theme] = themedItems.GetValueOrDefault(theme) + 1;
                     }
-                    string line = kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[list]);
-                    if (!outputs.TryGetValue((kind.Folder, plugin), out var output)) outputs[(kind.Folder, plugin)] = output = new Output();
-                    if (output.Seen.Add(line))
-                    {
-                        output.Lines.Add("; " + (record.EditorID ?? record.FormKey.ToString()) + ": " + itemID + " -> " + list + factionNote);
-                        output.Lines.Add(line);
-                    }
+                    Write(kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[list]), itemID + " -> " + list + factionNote);
                     Log("  " + label + ": " + itemID + " -> " + list + factionNote);
                     replacedCount++;
                 }
@@ -284,7 +336,7 @@ namespace OWLReplaceVanillaItems
                     + (themedRecords.Count == 0 ? "none" : string.Join(", ", themedRecords.Select(r => r.Key + " " + r.Value)))
                     + "; items given a themed list: "
                     + (themedItems.Count == 0 ? "none" : string.Join(", ", themedItems.Select(t => t.Value + " " + t.Key))) + ".");
-            Log(replacedCount + " vanilla items replaced by OWL lists (" + themedItems.Values.Sum() + " by a themed list) in " + recordCount + " records of " + patched.Count + " plugins, "
+            Log(replacedCount + " vanilla items replaced by OWL lists (" + themedItems.Values.Sum() + " by a themed list, " + setCount + " sets of pieces by an outfit list) in " + recordCount + " records of " + patched.Count + " plugins, "
                 + keptCount + " kept because the original record has them, " + deferredCount + " left to the patches in Open World Loot's folders, "
                 + uniqueCount + " unique NPCs and " + outfitSkipCount + " outfits unique NPCs wear skipped (all listed above).");
         }
