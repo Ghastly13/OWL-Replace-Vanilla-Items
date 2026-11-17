@@ -203,7 +203,12 @@ namespace OWLReplaceVanillaItems
             {
                 if (listing.Mod is not { } mod) continue;
                 var key = listing.ModKey;
-                if (key == OwlMap.Plugin || skipped.Contains(key)) continue;
+                if (skipped.Contains(key)) continue;
+                if (IsOwlPlugin(key))
+                {
+                    if (key != OwlMap.Plugin) Log("Left out " + key.FileName + ": an Open World Loot plugin");
+                    continue;
+                }
                 if (only.Count > 0)
                 {
                     if (only.Contains(key)) plugins.Add(mod);
@@ -221,6 +226,10 @@ namespace OWLReplaceVanillaItems
                 Log("NOTE: " + key.FileName + " (in \"Only these plugins\") is not in the load order.");
             return plugins;
         }
+
+        // Open World Loot's own plugins, by name: Open World Loot.esp and its patches (Open World Loot - Heavy Armory
+        // Patch.esp, ...). Never patched, even when listed in "Only these plugins"
+        private static bool IsOwlPlugin(ModKey key) => key.FileName.ToString().Contains("Open World Loot", StringComparison.OrdinalIgnoreCase);
 
         private static IEnumerable<FormKey> ItemsOf(ILeveledItemGetter list) =>
             list.Entries?.Select(e => e.Data?.Reference.FormKey ?? FormKey.Null) ?? Enumerable.Empty<FormKey>();

@@ -23,8 +23,10 @@ holding it that it is named after (`OWL_Armor_Fur_Cuirass_Vanilla` -> `OWL_Armor
 - NPCs flagged Unique (in the version that wins), and the outfits any unique NPC wears, by default or to sleep (its own,
   or those of the NPC template it takes its inventory from). Both are settings.
 - Enchanted items, uniques and clothing: they are in no OWL list.
-- By default, `Open World Loot.esp`, its masters (the base game and the Creation Club plugins it requires, which its own
-  INIs cover), and plugins Open World Loot already has patches for: a `Plugin.esp.ini` in one of its folders
+- Open World Loot's own plugins: every plugin with Open World Loot in its name (`Open World Loot.esp`,
+  `Open World Loot - Heavy Armory Patch.esp`, ...), whatever the settings say.
+- By default, Open World Loot's masters (the base game and the Creation Club plugins it requires, which its own INIs
+  cover), and plugins Open World Loot already has patches for: a `Plugin.esp.ini` in one of its folders
   (`SKSE\Plugins\SkyPatcher\<type>\OWL\...`), from Open World Loot or another mod. INIs written by this patcher or by the
   xEdit scripts `OWL_Replace_Vanilla_Items.pas` and `OWL_Add_Items_To_Lists.pas` do not count.
 

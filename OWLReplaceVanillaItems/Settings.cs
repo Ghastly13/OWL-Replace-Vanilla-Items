@@ -9,7 +9,7 @@ namespace OWLReplaceVanillaItems
     {
         [SynthesisOrder]
         [SynthesisSettingName("Only these plugins")]
-        [SynthesisTooltip("Patch only these plugins' records. Empty: every plugin in the load order but Open World Loot.esp, its masters (the base game and the Creation Club plugins it requires, which its own INIs cover), the plugins below and, with the next setting on, the plugins Open World Loot already has patches for. A plugin listed here is patched even if it is one of those, Open World Loot.esp itself excepted.")]
+        [SynthesisTooltip("Patch only these plugins' records. Empty: every plugin in the load order but Open World Loot's own plugins (every plugin with Open World Loot in its name), its masters (the base game and the Creation Club plugins it requires, which its own INIs cover), the plugins below and, with the next setting on, the plugins Open World Loot already has patches for. A plugin listed here is patched even if it is one of those, Open World Loot's own plugins excepted.")]
         public List<ModKey> OnlyPlugins { get; set; } = new();
 
         [SynthesisOrder]
