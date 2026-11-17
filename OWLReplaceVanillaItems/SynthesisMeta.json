@@ -1,0 +1,11 @@
+{
+  "Nickname": "OWL Replace Vanilla Items",
+  "Visibility": "Visible",
+  "OneLineDescription": "Replaces vanilla weapons, armor and ammo in mods' leveled lists, containers, outfits and NPCs with the Open World Loot lists that hand them out, through SkyPatcher INIs.",
+  "LongDescription": "",
+  "PreferredAutoVersioning": "Default",
+  "RequiredMods": [ "Open World Loot.esp" ],
+  "TargetedReleases": [
+    "SkyrimSE"
+  ]
+}
