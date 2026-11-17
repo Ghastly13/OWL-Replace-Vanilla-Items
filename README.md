@@ -53,6 +53,11 @@ leveled list, container, outfit, NPC, weapon, armor or ammo in any version (SkyP
 all record types, and a record a mod renamed may still answer to its old EditorID). Other forms are written as
 `Plugin.esp|FormID` without leading zeros (`Skyrim.esm|12EB7`), each listed in the log.
 
+## Installing
+
+In Synthesis, add a Git Repository patcher with the URL `https://github.com/Ghastly13/OWL-Replace-Vanilla-Items` and pick
+the `OWLReplaceVanillaItems` project.
+
 ## Requirements
 
 - Open World Loot (SkyPatcher Edition) and SkyPatcher. SkyPatcher 8.0 reads EditorIDs in every key these INIs use,
