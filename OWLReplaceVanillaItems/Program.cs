@@ -93,6 +93,43 @@ namespace OWLReplaceVanillaItems
             var refs = new SkyPatcherRefs(state, settings.UseEditorIDs);
             var outputs = new SortedDictionary<(string Folder, string Plugin), Output>();
             int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0, deferredCount = 0;
+            // Items given a themed list, per theme; records with items to replace that have a theme, per theme and record type
+            var themedItems = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var themedRecords = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            // Themed lists: the themes each record has. Placed copies are read from the plugins patched and the plugins that
+            // add the containers (and, with place rules, the NPCs and the outfits' wearers) that hold items to replace
+            ThemeRules? themes = settings.UseThemedLists ? new ThemeRules(state, owl, settings.ThemeRules, Log) : null;
+            if (themes != null && themes.RuleCount > 0)
+            {
+                var containers = new HashSet<FormKey>();
+                var scan = new HashSet<ModKey>();
+                foreach (var mod in plugins)
+                {
+                    if (settings.Containers)
+                        foreach (var container in mod.Containers)
+                            if (ItemsOf(container).Any(owl.Targets.ContainsKey))
+                            {
+                                containers.Add(container.FormKey);
+                                scan.Add(mod.ModKey);
+                                scan.Add(container.FormKey.ModKey);
+                            }
+                    if (!themes.HasPlaceRules) continue;
+                    if (settings.Npcs)
+                        foreach (var npc in mod.Npcs)
+                            if (ItemsOf(npc).Any(owl.Targets.ContainsKey)) { scan.Add(mod.ModKey); scan.Add(npc.FormKey.ModKey); }
+                    if (settings.Outfits)
+                        foreach (var outfit in mod.Outfits)
+                            if (ItemsOf(outfit).Any(owl.Targets.ContainsKey))
+                            {
+                                scan.Add(mod.ModKey);
+                                foreach (var wearer in themes.WearersOf(outfit.FormKey)) scan.Add(wearer.ModKey);
+                            }
+                }
+                themes.ScanPlacements(state.LoadOrder.ListedOrder.Where(l => l.Mod != null && scan.Contains(l.ModKey)).Select(l => l.Mod!), containers);
+                Log("Themed lists: " + themes.RuleCount + " theme rules; " + themes.PlacedCopies + " placed copies read from " + scan.Count + " plugins; "
+                    + containers.Count(c => themes.ContainerThemes(c).Length > 0) + " of the " + containers.Count + " containers with items to replace have a theme.");
+            }
 
             string ItemID(FormKey item) => linkCache.TryResolve<IItemGetter>(item, out var found) && found.EditorID != null ? found.EditorID : item.ToString();
 
@@ -120,7 +157,7 @@ namespace OWLReplaceVanillaItems
 
             // Replaces the OWL-listed items in one record of the plugin. original gives the items of the record's original
             // (the plugin that adds it), read only for a record the plugin overrides
-            void Process(Kind kind, ISkyrimModGetter mod, IMajorRecordGetter record, IEnumerable<FormKey> items, Func<HashSet<FormKey>?> original, string? skipReason)
+            void Process(Kind kind, ISkyrimModGetter mod, IMajorRecordGetter record, IEnumerable<FormKey> items, Func<HashSet<FormKey>?> original, string? skipReason, int[]? recordThemes = null)
             {
                 string plugin = mod.ModKey.FileName;
                 string label = (record.EditorID ?? record.FormKey.ToString()) + " (" + kind.Signature + ", " + plugin + ")";
@@ -162,14 +199,23 @@ namespace OWLReplaceVanillaItems
                         deferredCount++;
                         continue;
                     }
-                    string line = kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[target]);
+                    // The list of the first of the record's themes Open World Loot has one for the item under
+                    string list = target;
+                    string factionNote = "";
+                    if (recordThemes is { Length: > 0 } && themes!.ThemedList(target, recordThemes) is var (themed, theme))
+                    {
+                        list = themed;
+                        factionNote = " (" + theme + ")";
+                        themedItems[theme] = themedItems.GetValueOrDefault(theme) + 1;
+                    }
+                    string line = kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[list]);
                     if (!outputs.TryGetValue((kind.Folder, plugin), out var output)) outputs[(kind.Folder, plugin)] = output = new Output();
                     if (output.Seen.Add(line))
                     {
-                        output.Lines.Add("; " + (record.EditorID ?? record.FormKey.ToString()) + ": " + itemID + " -> " + target);
+                        output.Lines.Add("; " + (record.EditorID ?? record.FormKey.ToString()) + ": " + itemID + " -> " + list + factionNote);
                         output.Lines.Add(line);
                     }
-                    Log("  " + label + ": " + itemID + " -> " + target);
+                    Log("  " + label + ": " + itemID + " -> " + list + factionNote);
                     replacedCount++;
                 }
                 foreach (var (file, left) in deferred)
@@ -181,6 +227,12 @@ namespace OWLReplaceVanillaItems
                     else outfitSkipCount++;
                 }
                 else if (done.Count > 0) recordCount++;
+                if (recordThemes is { Length: > 0 } && done.Count > 0 && skipped.Count == 0)
+                    foreach (var i in recordThemes)
+                    {
+                        string key = themes!.ThemeName(i) + " " + kind.Signature;
+                        themedRecords[key] = themedRecords.GetValueOrDefault(key) + 1;
+                    }
             }
 
             ISkyrimModGetter? Defining(FormKey formKey) => state.LoadOrder.TryGetValue(formKey.ModKey)?.Mod;
@@ -194,18 +246,20 @@ namespace OWLReplaceVanillaItems
                 if (settings.Containers)
                     foreach (var container in mod.Containers)
                         Process(ContainerKind, mod, container, ItemsOf(container),
-                            () => Defining(container.FormKey)?.Containers.TryGetValue(container.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, null);
+                            () => Defining(container.FormKey)?.Containers.TryGetValue(container.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, null,
+                            themes?.ContainerThemes(container.FormKey));
                 if (settings.Outfits)
                     foreach (var outfit in mod.Outfits)
                         Process(OutfitKind, mod, outfit, ItemsOf(outfit),
                             () => Defining(outfit.FormKey)?.Outfits.TryGetValue(outfit.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null,
-                            wearers?.Describe(outfit.FormKey));
+                            wearers?.Describe(outfit.FormKey), themes?.OutfitThemes(outfit.FormKey));
                 if (settings.Npcs)
                     foreach (var npc in mod.Npcs)
                     {
                         string? unique = settings.SkipUniqueNpcs && linkCache.TryResolve<INpcGetter>(npc.FormKey, out var winner) && UniqueWearers.IsUnique(winner) ? "a unique NPC" : null;
                         Process(NpcKind, mod, npc, ItemsOf(npc),
-                            () => Defining(npc.FormKey)?.Npcs.TryGetValue(npc.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, unique);
+                            () => Defining(npc.FormKey)?.Npcs.TryGetValue(npc.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, unique,
+                            themes?.NpcThemes(npc.FormKey));
                     }
             }
 
@@ -225,7 +279,12 @@ namespace OWLReplaceVanillaItems
                     foreach (var file in files)
                         Log("NOTE: " + file + " was written by the xEdit script OWL_Replace_Vanilla_Items.pas for " + plugin + ". This patcher's INIs replace it: remove it, or its lines (any for unique NPCs included) keep applying.");
 
-            Log(replacedCount + " vanilla items replaced by OWL lists in " + recordCount + " records of " + patched.Count + " plugins, "
+            if (themes != null)
+                Log("Themed lists: records with items to replace that have a theme: "
+                    + (themedRecords.Count == 0 ? "none" : string.Join(", ", themedRecords.Select(r => r.Key + " " + r.Value)))
+                    + "; items given a themed list: "
+                    + (themedItems.Count == 0 ? "none" : string.Join(", ", themedItems.Select(t => t.Value + " " + t.Key))) + ".");
+            Log(replacedCount + " vanilla items replaced by OWL lists (" + themedItems.Values.Sum() + " by a themed list) in " + recordCount + " records of " + patched.Count + " plugins, "
                 + keptCount + " kept because the original record has them, " + deferredCount + " left to the patches in Open World Loot's folders, "
                 + uniqueCount + " unique NPCs and " + outfitSkipCount + " outfits unique NPCs wear skipped (all listed above).");
         }

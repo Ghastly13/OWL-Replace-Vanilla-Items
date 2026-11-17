@@ -16,6 +16,36 @@ item's EditorID (`SteelDagger` -> `OWL_Weapon_Steel_Dagger`, not `..._Alikr_...`
 holding it that it is named after (`OWL_Armor_Fur_Cuirass_Vanilla` -> `OWL_Armor_Fur_Cuirass`). The map is read from
 `Open World Loot.esp` on every run.
 
+**Themed lists.** Open World Loot also has lists for groups, named after them (`OWL_Armor_HideStudded_Cuirass_Stormcloak`,
+`OWL_Weapon_Elven_Sword_Thalmor`, `OWL_Armor_Iron_Cuirass_Town`), which it gives the vanilla gear lists of those groups.
+A record that matches a rule of the "Themed lists: rules" setting gets the theme's list for an item where Open World
+Loot has one, else the plain list. A rule is `Theme = kind patterns; kind patterns`, with these kinds:
+
+- `faction`: the NPC, or the NPC template it takes its factions from, is a member (rank 0 or more) of a matching faction;
+- `class`, `race`: the NPC's, or its traits template's;
+- `npc`: the NPC's own EditorID;
+- `worldspace`, `location`: every placed copy known of the record is in a matching worldspace, or a matching location
+  or one inside it. A placed NPC counts for the NPCs its template chain leads to, through leveled lists too.
+
+Patterns are EditorIDs, `*` standing for any text. The defaults, in order:
+
+| Theme | Who |
+|---|---|
+| Stormcloak, Thalmor, Penitus, Vigilant, Afflicted, SilverHand, Vampire, Warlock | members of their factions |
+| Boss | NPCs with Boss in their EditorID or class (bandit chiefs and other bosses) |
+| Bandit, Thief, Whiterun, Blacksmith | bandits, the Thieves Guild, Whiterun's guards, blacksmiths |
+| Mage | mage classes (`*Mage*`, sorcerers, spellswords, battlemages, witchblades, nightblades, mystics, wizards) |
+| Orc | the Orc race (`OrcRace`: vampire Orcs, `OrcRaceVampire`, are left out) |
+| Morrowind | NPCs, outfits and containers in Solstheim (or a worldspace or location named Morrowind) |
+| Town | townsfolk: members of the town factions (`Town*Faction`) |
+
+A record gets every theme it matches, and each item the first of them Open World Loot has a list for: a bandit chief's
+weapons come from the Bandit lists, its armor from the Boss ones. An outfit takes the themes every NPC wearing it has (by
+default or to sleep, its own or its inventory template's); a container those every placed copy has, from its owner (its
+own, else its cell's: an NPC's themes, a faction's own, else those all its members share) and from where it is, or those
+of the faction whose merchant chest it is (a blacksmith's chest: its merchant is a blacksmith). Placed copies are read
+from the plugins patched and the plugins that add the containers, NPCs and outfits' wearers that hold items to replace.
+
 ## What is left alone
 
 - In a record the plugin overrides (a vanilla chest it adds to), an item the original record already has: SkyPatcher

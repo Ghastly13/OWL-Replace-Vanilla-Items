@@ -38,6 +38,35 @@ namespace OWLReplaceVanillaItems
         public bool Npcs { get; set; } = true;
 
         [SynthesisOrder]
+        [SynthesisSettingName("Themed lists")]
+        [SynthesisTooltip("Give a record that matches a rule below the rule's Open World Loot list for an item, where Open World Loot has one (OWL_Armor_HideStudded_Cuirass_Stormcloak for a Stormcloak's hide armor), as Open World Loot does for the vanilla gear lists of those groups. An outfit takes the themes every NPC that wears it has; a container those every placed copy has, from its owner and from where it is, or its merchant's.")]
+        public bool UseThemedLists { get; set; } = true;
+
+        [SynthesisOrder]
+        [SynthesisSettingName("Themed lists: rules")]
+        [SynthesisTooltip("Theme = kind patterns; kind patterns. The theme is the end of Open World Loot's themed lists' names (OWL_..._Stormcloak). Kinds: faction (the NPC, or the template it takes its factions from, is a member), class and race (the NPC's, or its traits template's), npc (the NPC's EditorID), worldspace and location (every placed copy known is there, or in a location inside it). Patterns are EditorIDs, * for any text. A record gets every theme it matches, and each item the first of them, in this order, Open World Loot has a list for. Open World Loot's other themes: CalcelmoEmployee, Swashbuckler.")]
+        public List<string> ThemeRules { get; set; } = new()
+        {
+            "Stormcloak = faction CWSonsFaction",
+            "Thalmor = faction ThalmorFaction",
+            "Penitus = faction PenitusOculatusFaction",
+            "Vigilant = faction VigilantOfStendarrFaction",
+            "Afflicted = faction DA13AfflictedFaction",
+            "SilverHand = faction SilverHandFaction",
+            "Vampire = faction VampireFaction, DLC1VampireFaction",
+            "Warlock = faction WarlockFaction",
+            "Boss = npc *Boss*; class *Boss*",
+            "Bandit = faction BanditFaction",
+            "Thief = faction ThievesGuildFaction",
+            "Whiterun = faction GuardFactionWhiterun",
+            "Blacksmith = faction JobBlacksmithFaction",
+            "Mage = class *Mage*, *Sorcerer*, *Spellsword*, *Battlemage*, *Witchblade*, *Nightblade*, *Mystic*, *Wizard*",
+            "Orc = race OrcRace",
+            "Morrowind = worldspace DLC2SolstheimWorld, *Morrowind*; location DLC2SolstheimLocation, *Morrowind*",
+            "Town = faction Town*Faction",
+        };
+
+        [SynthesisOrder]
         [SynthesisSettingName("Skip unique NPCs")]
         [SynthesisTooltip("Leave NPCs flagged Unique (in the version that wins: named characters, followers) alone: they keep the gear they were given.")]
         public bool SkipUniqueNpcs { get; set; } = true;
