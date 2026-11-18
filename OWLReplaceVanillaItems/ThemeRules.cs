@@ -322,8 +322,10 @@ namespace OWLReplaceVanillaItems
 
         // The first of the record's themes Open World Loot has a list for the item under, and that theme; null when none.
         // The theme's list is the plain list's name with _<theme> (OWL_Weapon_Steel_Dagger_Bandit), else a list with the
-        // theme in the material's place that holds the item itself (OWL_Weapon_Alikr_Dagger: the iron and steel daggers,
-        // and not an Alik'r's ebony one), the one with the fewest name parts.
+        // theme in the material's place that holds the item itself or its plain list (OWL_Weapon_Alikr_Dagger: the iron and
+        // steel daggers; OWL_Weapon_Alikr_2H: OWL_Weapon_Iron_GreatSword and ...Steel...; an Alik'r's ebony dagger or war
+        // axe in neither), the one with the fewest name parts. An item whose plain list is the theme's own already
+        // (a scimitar's OWL_Weapon_Alikr_1H) stays there.
         public (string List, string Theme)? ThemedList(string plainList, FormKey item, int[] themes)
         {
             var parts = plainList.Split('_');
@@ -334,9 +336,10 @@ namespace OWLReplaceVanillaItems
                 if (_owl.Lists.ContainsKey(themed)) return (themed, theme);
                 if (parts.Length < 3) continue;
                 string prefix = parts[0] + "_" + parts[1] + "_" + theme + "_";
-                var holding = _owl.Holds.Where(h => h.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && h.Value.Contains(item)
-                        && !h.Key.Equals(plainList, StringComparison.OrdinalIgnoreCase))
-                    .Select(h => h.Key).OrderBy(id => id.Count(c => c == '_')).ThenBy(id => id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if (plainList.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                var holding = _owl.Lists.Keys.Where(id => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                        && ((_owl.Holds.TryGetValue(id, out var items) && items.Contains(item)) || (_owl.Sublists.TryGetValue(id, out var subs) && subs.Contains(plainList))))
+                    .OrderBy(id => id.Count(c => c == '_')).ThenBy(id => id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
                 if (holding != null) return (holding, theme);
             }
             return null;

@@ -54,7 +54,7 @@ namespace OWLReplaceVanillaItems
 
         [SynthesisOrder]
         [SynthesisSettingName("Themed lists: rules")]
-        [SynthesisTooltip("Theme = kind patterns; kind patterns. The theme is the end of Open World Loot's themed lists' names (OWL_..._Stormcloak), or what stands in a list's material place where that list holds the item itself (OWL_Weapon_Alikr_Dagger). Kinds: faction (the NPC, or the template it takes its factions from, is a member), class and race (the NPC's, or its traits template's), npc (the NPC's EditorID), worldspace and location (every placed copy known is there, or in a location inside it). Patterns are EditorIDs, * for any text. A record gets every theme it matches, and each item the first of them, in this order, Open World Loot has a list for. Open World Loot's other themes: CalcelmoEmployee, Swashbuckler.")]
+        [SynthesisTooltip("Theme = kind patterns; kind patterns. The theme is the end of Open World Loot's themed lists' names (OWL_..._Stormcloak), or what stands in a list's material place where that list holds the item itself or its plain list (OWL_Weapon_Alikr_Dagger, OWL_Weapon_Alikr_2H). Kinds: faction (the NPC, or the template it takes its factions from, is a member), class and race (the NPC's, or its traits template's), npc (the NPC's EditorID), worldspace and location (every placed copy known is there, or in a location inside it). Patterns are EditorIDs, * for any text. A record gets every theme it matches, and each item the first of them, in this order, Open World Loot has a list for. Open World Loot's other themes: CalcelmoEmployee, Swashbuckler.")]
         public List<string> ThemeRules { get; set; } = new()
         {
             "Stormcloak = faction CWSonsFaction",
@@ -78,7 +78,7 @@ namespace OWLReplaceVanillaItems
 
         [SynthesisOrder]
         [SynthesisSettingName("Alik'r lists")]
-        [SynthesisTooltip("Give the Alik'r (the Redguard warriors hunting in Skyrim: members of the MS08Alikr factions, or NPCs with Alikr in their EditorID, such as the Creation Club's Cyrus quest's) Open World Loot's Alik'r lists for the items those hold, as Open World Loot does for the game's own: an iron or steel dagger becomes OWL_Weapon_Alikr_Dagger. Works as a first themed-list rule, \"Alikr = faction MS08Alikr*; npc *Alikr*\", with \"Themed lists\" on or off; a rule of your own for Alikr takes its place.")]
+        [SynthesisTooltip("Give the Alik'r (the Redguard warriors hunting in Skyrim: members of the MS08Alikr factions, or NPCs with Alikr in their EditorID, such as the Creation Club's Cyrus quest's) Open World Loot's Alik'r lists for the items those hold, as Open World Loot does for the game's own: an iron or steel dagger becomes OWL_Weapon_Alikr_Dagger, an iron or steel greatsword OWL_Weapon_Alikr_2H. Works as a first themed-list rule, \"Alikr = faction MS08Alikr*; npc *Alikr*\", with \"Themed lists\" on or off; a rule of your own for Alikr takes its place.")]
         public bool AlikrLists { get; set; } = true;
 
         [SynthesisOrder]

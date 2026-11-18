@@ -31,8 +31,9 @@ Setting "Outfit lists".
 `OWL_Weapon_Elven_Sword_Thalmor`, `OWL_Armor_Iron_Cuirass_Town`), which it gives the vanilla gear lists of those groups.
 A record that matches a rule of the "Themed lists: rules" setting gets the theme's list for an item where Open World
 Loot has one, else the plain list. The theme's list is the plain list's name with `_<Theme>`, else a list with the theme
-in the material's place that holds the item itself: `OWL_Weapon_Alikr_Dagger` holds the iron and steel daggers, so an
-Alik'r's steel dagger goes there, and an Alik'r's ebony dagger stays with `OWL_Weapon_Ebony_Dagger`. A rule is
+in the material's place that holds the item itself or its plain list: `OWL_Weapon_Alikr_Dagger` holds the iron and steel
+daggers and `OWL_Weapon_Alikr_2H` the iron and steel greatsword lists, so an Alik'r's steel dagger and iron greatsword go
+there, while an Alik'r's ebony dagger stays with `OWL_Weapon_Ebony_Dagger`. A rule is
 `Theme = kind patterns; kind patterns`, with these kinds:
 
 - `faction`: the NPC, or the NPC template it takes its factions from, is a member (rank 0 or more) of a matching faction;
@@ -61,8 +62,9 @@ of the faction whose merchant chest it is (a blacksmith's chest: its merchant is
 from the plugins patched and the plugins that add the containers, NPCs and outfits' wearers that hold items to replace.
 
 **Alik'r lists.** The Alik'r, the Redguard warriors hunting in Skyrim, get Open World Loot's Alik'r lists for the items
-those hold, as Open World Loot gives the game's own (`EncAlikr...`, `MS08Alikr...`) in its INIs: a steel dagger becomes
-`OWL_Weapon_Alikr_Dagger`, a scimitar `OWL_Weapon_Alikr_1H`. A mod's Alik'r are found as members of the `MS08Alikr`
+those hold, as Open World Loot gives the game's own (`EncAlikr...`, `MS08Alikr...`) in its INIs: an iron or steel dagger
+becomes `OWL_Weapon_Alikr_Dagger`, an iron or steel greatsword `OWL_Weapon_Alikr_2H`, a scimitar `OWL_Weapon_Alikr_1H`.
+Other weapons (ebony, war axes, battleaxes) keep their plain lists: the Alik'r lists hold none of them. A mod's Alik'r are found as members of the `MS08Alikr`
 factions or by Alikr in their EditorID (the Creation Club's Dead Man's Dread: `ccBGSSSE031_LvlAlikrMissileM`). This is a
 built-in first rule, `Alikr = faction MS08Alikr*; npc *Alikr*`, which applies with "Themed lists" on or off; a rule of
 your own for Alikr takes its place. Setting "Alik'r lists".

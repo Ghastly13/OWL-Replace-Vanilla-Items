@@ -22,6 +22,8 @@ namespace OWLReplaceVanillaItems
         public Dictionary<FormKey, string> Targets { get; } = new();
         // OWL list EditorID -> the weapons, armor and ammo it holds itself (not through its sublists)
         public Dictionary<string, HashSet<FormKey>> Holds { get; } = new(StringComparer.OrdinalIgnoreCase);
+        // OWL list EditorID -> the OWL lists it holds itself (OWL_Weapon_Alikr_2H: OWL_Weapon_Iron_GreatSword, ...Steel...)
+        public Dictionary<string, HashSet<string>> Sublists { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public static OwlMap Build(ISkyrimModGetter owl, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache)
         {
@@ -46,6 +48,11 @@ namespace OWLReplaceVanillaItems
                     if (item is ILeveledItemGetter sublist)
                     {
                         if (sublist.EditorID != null && sublist.EditorID.StartsWith(listID + "_", StringComparison.Ordinal)) namedParent[sublist.EditorID] = listID;
+                        if (sublist.EditorID != null && sublist.EditorID.StartsWith("OWL_", StringComparison.Ordinal))
+                        {
+                            if (!map.Sublists.TryGetValue(listID, out var subs)) map.Sublists[listID] = subs = new(StringComparer.OrdinalIgnoreCase);
+                            subs.Add(sublist.EditorID);
+                        }
                         continue;
                     }
                     if (item is not (IWeaponGetter or IArmorGetter or IAmmunitionGetter)) continue;
