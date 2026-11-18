@@ -9,13 +9,18 @@ namespace OWLReplaceVanillaItems
     {
         [SynthesisOrder]
         [SynthesisSettingName("Only these plugins")]
-        [SynthesisTooltip("Patch only these plugins' records. Empty: every plugin in the load order but Open World Loot's own plugins (every plugin with Open World Loot in its name), its masters (the base game and the Creation Club plugins it requires, which its own INIs cover) and the plugins below. A plugin listed here is patched even if it is one of Open World Loot's masters. Plugins Open World Loot already has patches for are patched too, around what those patches do: records they clear, and items they replace or remove, are left to them.")]
+        [SynthesisTooltip("Patch only these plugins' records. Empty: every plugin in the load order but Open World Loot's own plugins (every plugin with Open World Loot in its name), its masters (the base game and the Creation Club plugins it requires, which its own INIs cover) and the plugins below. A plugin listed here is patched even if it is one of Open World Loot's masters. Plugins SkyPatcher INIs already patch (Open World Loot's patches, other mods') are patched too, around what those INIs do: records they clear, and items they replace or remove, are left to them. Also limits the records whose items other mods' SkyPatcher INIs add are replaced in.")]
         public List<ModKey> OnlyPlugins { get; set; } = new();
 
         [SynthesisOrder]
         [SynthesisSettingName("Leave out these plugins")]
-        [SynthesisTooltip("Plugins whose records are never patched.")]
+        [SynthesisTooltip("Plugins whose records are never patched, for their own items or those other mods' SkyPatcher INIs add to them.")]
         public List<ModKey> SkippedPlugins { get; set; } = new();
+
+        [SynthesisOrder]
+        [SynthesisSettingName("Items other mods' SkyPatcher INIs add")]
+        [SynthesisTooltip("Also replace the vanilla items other mods' SkyPatcher INIs (outside Open World Loot's folders) add to leveled lists, containers, outfits and NPCs, or put in by replacing: WACCF's additions to vanilla outfits, ... In the records of every plugin, Open World Loot's masters included, with the same checks: unique NPCs and the outfits they wear skipped, themed lists, items the record already holds kept, and what INIs SkyPatcher applies later replace or remove left to them. Written to an INI named after the source, so it loads only when the source does.")]
+        public bool SkyPatcherAdditions { get; set; } = true;
 
         [SynthesisOrder]
         [SynthesisSettingName("Leveled lists")]
@@ -49,7 +54,7 @@ namespace OWLReplaceVanillaItems
 
         [SynthesisOrder]
         [SynthesisSettingName("Themed lists: rules")]
-        [SynthesisTooltip("Theme = kind patterns; kind patterns. The theme is the end of Open World Loot's themed lists' names (OWL_..._Stormcloak). Kinds: faction (the NPC, or the template it takes its factions from, is a member), class and race (the NPC's, or its traits template's), npc (the NPC's EditorID), worldspace and location (every placed copy known is there, or in a location inside it). Patterns are EditorIDs, * for any text. A record gets every theme it matches, and each item the first of them, in this order, Open World Loot has a list for. Open World Loot's other themes: CalcelmoEmployee, Swashbuckler.")]
+        [SynthesisTooltip("Theme = kind patterns; kind patterns. The theme is the end of Open World Loot's themed lists' names (OWL_..._Stormcloak), or what stands in a list's material place where that list holds the item itself (OWL_Weapon_Alikr_Dagger). Kinds: faction (the NPC, or the template it takes its factions from, is a member), class and race (the NPC's, or its traits template's), npc (the NPC's EditorID), worldspace and location (every placed copy known is there, or in a location inside it). Patterns are EditorIDs, * for any text. A record gets every theme it matches, and each item the first of them, in this order, Open World Loot has a list for. Open World Loot's other themes: CalcelmoEmployee, Swashbuckler.")]
         public List<string> ThemeRules { get; set; } = new()
         {
             "Stormcloak = faction CWSonsFaction",
@@ -70,6 +75,11 @@ namespace OWLReplaceVanillaItems
             "Morrowind = worldspace DLC2SolstheimWorld, *Morrowind*; location DLC2SolstheimLocation, *Morrowind*",
             "Town = faction Town*Faction",
         };
+
+        [SynthesisOrder]
+        [SynthesisSettingName("Alik'r lists")]
+        [SynthesisTooltip("Give the Alik'r (the Redguard warriors hunting in Skyrim: members of the MS08Alikr factions, or NPCs with Alikr in their EditorID, such as the Creation Club's Cyrus quest's) Open World Loot's Alik'r lists for the items those hold, as Open World Loot does for the game's own: an iron or steel dagger becomes OWL_Weapon_Alikr_Dagger. Works as a first themed-list rule, \"Alikr = faction MS08Alikr*; npc *Alikr*\", with \"Themed lists\" on or off; a rule of your own for Alikr takes its place.")]
+        public bool AlikrLists { get; set; } = true;
 
         [SynthesisOrder]
         [SynthesisSettingName("Skip unique NPCs")]

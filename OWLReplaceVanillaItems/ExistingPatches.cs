@@ -10,15 +10,26 @@ using Mutagen.Bethesda.Synthesis;
 
 namespace OWLReplaceVanillaItems
 {
-    // What the SkyPatcher INIs already in Open World Loot's folders do to records: Open World Loot's own, and the patches
-    // for other mods (its Heavy Armory patch, a mod's own OWL patch, ...). For each record they name: whether they clear it,
-    // and which items they replace or remove in it (by form, by count or by keyword). This patcher leaves those to them: a
-    // record a patch clears gets nothing more, and an item a patch replaces or removes in a record is not replaced there.
+    // What the SkyPatcher INIs already installed do to records: Open World Loot's own and its patches for other mods (in its
+    // OWL folders), and other mods' (WACCF's, ...). For each record they name: whether they clear it, and which items they
+    // replace or remove in it (by form, by count or by keyword). This patcher leaves those to them: a record a patch clears
+    // gets nothing more from its plugins, and an item a patch replaces or removes in a record is not replaced there.
+    // From the INIs outside Open World Loot's folders it also reads what they add to records (and put in by replacing), so
+    // those items get OWL lists as a plugin's would; Open World Loot's own additions are its choices, left as they are.
     // Only lines that name their records are read: by form (filterByLLs, filterByContainers, filterByOutfits,
     // filterByNpcs) or by EditorID (filterByEditorIdContains, ...Or, ...Excluded). An INI named after a plugin counts only
     // with that plugin active, as SkyPatcher reads it only then.
     public sealed class ExistingPatches
     {
+        // An item an INI adds to a record
+        public sealed record Addition(IniFiles.Ini Ini, FormKey Record, FormKey Item);
+
+        private static readonly HashSet<string> AddKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "addToLLs", "addOnceToLLs", "addToContainers", "addOnceToContainers", "formsToAdd", "objectsToAdd", "addOnceToInventory",
+        };
+
+        public List<Addition> Additions { get; } = new();
         public sealed class RecordPatch
         {
             // The INI that clears the record, if one does
@@ -61,7 +72,7 @@ namespace OWLReplaceVanillaItems
         public int RecordsCleared => _records.Values.Count(r => r.ClearedBy != null);
         public int RecordsWithItems => _records.Values.Count(r => r.Items.Count > 0 || r.Keywords.Count > 0);
 
-        public ExistingPatches(IPatcherState<ISkyrimMod, ISkyrimModGetter> state, string skyPatcherFolder, IEnumerable<(string Folder, string Path)> inis)
+        public ExistingPatches(IPatcherState<ISkyrimMod, ISkyrimModGetter> state, string skyPatcherFolder, IEnumerable<IniFiles.Ini> inis)
         {
             var order = state.LoadOrder.PriorityOrder;
             Index("leveledList", order.LeveledItem().WinningOverrides());
@@ -74,17 +85,17 @@ namespace OWLReplaceVanillaItems
             Index(null, order.Keyword().WinningOverrides());
 
             var active = new HashSet<string>(state.LoadOrder.ListedOrder.Where(l => l.Mod != null).Select(l => l.ModKey.FileName.ToString()), StringComparer.OrdinalIgnoreCase);
-            foreach (var (folder, path) in inis)
+            foreach (var ini in inis)
             {
-                string gate = Path.GetFileNameWithoutExtension(path);
+                string gate = Path.GetFileNameWithoutExtension(ini.Path);
                 if (IniFiles.IsPluginName(gate) && !active.Contains(gate)) continue;
                 string text;
-                try { text = File.ReadAllText(path); }
+                try { text = File.ReadAllText(ini.Path); }
                 catch (IOException) { continue; }
                 catch (UnauthorizedAccessException) { continue; }
                 FilesRead++;
-                string label = Path.GetRelativePath(skyPatcherFolder, path);
-                foreach (var line in text.Split('\n')) Read(folder, line, label);
+                string label = Path.GetRelativePath(skyPatcherFolder, ini.Path);
+                foreach (var line in text.Split('\n')) Read(ini, line, label);
             }
         }
 
@@ -136,8 +147,17 @@ namespace OWLReplaceVanillaItems
             return (end < 0 ? entry : entry[..end]).Trim();
         }
 
-        private void Read(string folder, string raw, string label)
+        // The second form of a replacement entry: "itemA~itemB", "itemA=itemB"
+        private static string SecondForm(string entry)
         {
+            var parts = entry.Split('~', '=');
+            return parts.Length > 1 ? parts[1].Trim() : "";
+        }
+
+        private void Read(IniFiles.Ini ini, string raw, string label)
+        {
+            string folder = ini.Folder;
+            bool additions = !ini.InOwlFolder;
             string line = raw;
             int comment = line.IndexOf(';');
             if (comment >= 0) line = line[..comment];
@@ -165,7 +185,8 @@ namespace OWLReplaceVanillaItems
                 else if (!key.StartsWith("filterBy", StringComparison.OrdinalIgnoreCase) && !key.StartsWith("noFilter", StringComparison.OrdinalIgnoreCase))
                     ops.Add((key, value));
             }
-            bool relevant = ops.Any(o => ClearKeys.Contains(o.Key) || ReplaceKeys.Contains(o.Key) || RemoveKeys.Contains(o.Key) || KeywordRemoveKeys.Contains(o.Key));
+            bool relevant = ops.Any(o => ClearKeys.Contains(o.Key) || ReplaceKeys.Contains(o.Key) || RemoveKeys.Contains(o.Key) || KeywordRemoveKeys.Contains(o.Key)
+                || (additions && AddKeys.Contains(o.Key)));
             if (!relevant) return;
             if (!named)
             {
@@ -186,19 +207,29 @@ namespace OWLReplaceVanillaItems
                 }
             }
 
+            // Of several INIs that clear a record, or replace or remove an item in it, the one SkyPatcher applies last is
+            // kept: whether it comes after what another INI adds decides whether that addition is left to it
+            string Last(string? current) => current == null || IniFiles.AppliesAfter(label, current) ? label : current;
             foreach (var record in records)
             {
                 var patch = PatchOf(record);
                 foreach (var (key, value) in ops)
                 {
                     var entries = value.Split(',').Select(e => e.Trim()).Where(e => e.Length > 0);
-                    if (ClearKeys.Contains(key)) { if (!Off.Contains(value)) patch.ClearedBy ??= label; }
+                    if (ClearKeys.Contains(key)) { if (!Off.Contains(value)) patch.ClearedBy = Last(patch.ClearedBy); }
                     else if (ReplaceKeys.Contains(key) || RemoveKeys.Contains(key))
                         foreach (var entry in entries)
-                            foreach (var item in Resolve(FirstForm(entry))) patch.Items.TryAdd(item, label);
+                        {
+                            foreach (var item in Resolve(FirstForm(entry))) patch.Items[item] = Last(patch.Items.GetValueOrDefault(item));
+                            if (additions && ReplaceKeys.Contains(key))
+                                foreach (var item in Resolve(SecondForm(entry))) Additions.Add(new Addition(ini, record, item));
+                        }
                     else if (KeywordRemoveKeys.Contains(key))
                         foreach (var entry in entries)
-                            foreach (var keyword in Resolve(FirstForm(entry))) patch.Keywords.TryAdd(keyword, label);
+                            foreach (var keyword in Resolve(FirstForm(entry))) patch.Keywords[keyword] = Last(patch.Keywords.GetValueOrDefault(keyword));
+                    else if (additions && AddKeys.Contains(key))
+                        foreach (var entry in entries)
+                            foreach (var item in Resolve(FirstForm(entry))) Additions.Add(new Addition(ini, record, item));
                 }
             }
         }

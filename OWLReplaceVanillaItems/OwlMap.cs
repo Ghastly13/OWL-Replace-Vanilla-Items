@@ -20,6 +20,8 @@ namespace OWLReplaceVanillaItems
         public Dictionary<string, FormKey> Lists { get; } = new(StringComparer.OrdinalIgnoreCase);
         // Item -> EditorID of the OWL list that hands it out
         public Dictionary<FormKey, string> Targets { get; } = new();
+        // OWL list EditorID -> the weapons, armor and ammo it holds itself (not through its sublists)
+        public Dictionary<string, HashSet<FormKey>> Holds { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public static OwlMap Build(ISkyrimModGetter owl, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache)
         {
@@ -47,6 +49,8 @@ namespace OWLReplaceVanillaItems
                         continue;
                     }
                     if (item is not (IWeaponGetter or IArmorGetter or IAmmunitionGetter)) continue;
+                    if (!map.Holds.TryGetValue(listID, out var held)) map.Holds[listID] = held = new();
+                    held.Add(item.FormKey);
                     if (!map.Targets.TryGetValue(item.FormKey, out var current) || Better(listID, current, item.EditorID ?? ""))
                         map.Targets[item.FormKey] = listID;
                 }

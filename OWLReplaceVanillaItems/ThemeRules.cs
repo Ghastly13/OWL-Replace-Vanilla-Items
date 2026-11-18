@@ -101,9 +101,10 @@ namespace OWLReplaceVanillaItems
             int eq = text.IndexOf('=');
             if (eq <= 0) { log("NOTE: theme rule \"" + text + "\" is not Theme = kind patterns: ignored"); return null; }
             string theme = text[..eq].Trim();
-            if (!_owl.Lists.Keys.Any(id => id.EndsWith("_" + theme, StringComparison.OrdinalIgnoreCase)))
+            if (!_owl.Lists.Keys.Any(id => id.EndsWith("_" + theme, StringComparison.OrdinalIgnoreCase)
+                || id.StartsWith("OWL_Weapon_" + theme + "_", StringComparison.OrdinalIgnoreCase) || id.StartsWith("OWL_Armor_" + theme + "_", StringComparison.OrdinalIgnoreCase)))
             {
-                log("NOTE: theme rule \"" + text + "\": Open World Loot has no lists ending in _" + theme + ": ignored");
+                log("NOTE: theme rule \"" + text + "\": Open World Loot has no lists named after " + theme + " (OWL_..._" + theme + ", OWL_Weapon_" + theme + "_..., OWL_Armor_" + theme + "_...): ignored");
                 return null;
             }
             var criteria = new List<Criterion>();
@@ -319,14 +320,24 @@ namespace OWLReplaceVanillaItems
             return places;
         }
 
-        // The first of the record's themes Open World Loot has a list for the item under (the plain list's name with
-        // _<theme>), and that theme; null when none
-        public (string List, string Theme)? ThemedList(string plainList, int[] themes)
+        // The first of the record's themes Open World Loot has a list for the item under, and that theme; null when none.
+        // The theme's list is the plain list's name with _<theme> (OWL_Weapon_Steel_Dagger_Bandit), else a list with the
+        // theme in the material's place that holds the item itself (OWL_Weapon_Alikr_Dagger: the iron and steel daggers,
+        // and not an Alik'r's ebony one), the one with the fewest name parts.
+        public (string List, string Theme)? ThemedList(string plainList, FormKey item, int[] themes)
         {
+            var parts = plainList.Split('_');
             foreach (var i in themes)
             {
-                string themed = plainList + "_" + _rules[i].Theme;
-                if (_owl.Lists.ContainsKey(themed)) return (themed, _rules[i].Theme);
+                string theme = _rules[i].Theme;
+                string themed = plainList + "_" + theme;
+                if (_owl.Lists.ContainsKey(themed)) return (themed, theme);
+                if (parts.Length < 3) continue;
+                string prefix = parts[0] + "_" + parts[1] + "_" + theme + "_";
+                var holding = _owl.Holds.Where(h => h.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && h.Value.Contains(item)
+                        && !h.Key.Equals(plainList, StringComparison.OrdinalIgnoreCase))
+                    .Select(h => h.Key).OrderBy(id => id.Count(c => c == '_')).ThenBy(id => id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if (holding != null) return (holding, theme);
             }
             return null;
         }

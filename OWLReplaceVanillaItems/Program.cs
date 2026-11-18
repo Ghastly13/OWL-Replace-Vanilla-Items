@@ -13,8 +13,9 @@ namespace OWLReplaceVanillaItems
 {
     // Every vanilla weapon, armor or ammo that Open World Loot hands out through one of its lists, found in a mod's
     // leveled lists, containers, outfits or NPC inventories, is replaced by that list, the way OWL does it for the game's
-    // own records: an Iron Sword in a mod's bandit chest becomes OWL_Weapon_Iron_Sword. Written as SkyPatcher INIs, one
-    // per plugin and record type (IniFiles); the patch plugin gets no records.
+    // own records: an Iron Sword in a mod's bandit chest becomes OWL_Weapon_Iron_Sword. So are those other mods'
+    // SkyPatcher INIs add to records (ExistingPatches.Additions). Written as SkyPatcher INIs, one per plugin and record
+    // type and one per source INI (IniFiles); the patch plugin gets no records.
     //
     // SkyPatcher replaces every instance of the item in the record, so in a record the plugin overrides (a vanilla chest
     // it adds to), an item the original record already has is left alone: replacing it would change the game's own loot
@@ -37,14 +38,25 @@ namespace OWLReplaceVanillaItems
         // RemoveOp: how a set's other pieces are removed when its first is replaced by an outfit list. Only outfits make
         // sets: Open World Loot's outfit lists are for outfits
         private sealed record Kind(string Signature, string Folder, string Filter, string Op, string Separator, string? RemoveOp);
+        // The Alik'r, the Redguard warriors hunting in Skyrim: the theme setting "Alik'r lists" adds first. Open World Loot
+        // gives the game's own (EncAlikr..., MS08Alikr...) its Alik'r lists itself; this finds a mod's (the Creation Club's
+        // ccBGSSSE031_LvlAlikr...)
+        public const string AlikrRule = "Alikr = faction MS08Alikr*; npc *Alikr*";
+
         private static readonly Kind LeveledListKind = new("LVLI", "leveledList", "filterByLLs", "formsToReplace", "~", null);
         private static readonly Kind ContainerKind = new("CONT", "container", "filterByContainers", "replaceInContainers", "~", null);
         private static readonly Kind OutfitKind = new("OTFT", "outfit", "filterByOutfits", "formsToReplace", "=", "formsToRemove");
         private static readonly Kind NpcKind = new("NPC_", "npc", "filterByNpcs", "objectsToReplace", "~", null);
 
-        // The lines written for one plugin and record type
+        // Where the items looked at in a record come from: a plugin's version of the record, or what another mod's
+        // SkyPatcher INI adds to it. Name is for the log; File the INI written, inside this patcher's folder; What its
+        // header's "vanilla items in ..."; AddedBy the source INI (relative to the SkyPatcher folder) for additions
+        private sealed record Source(string Name, string File, string What, string? Plugin, string? AddedBy);
+
+        // The lines written to one INI
         private sealed class Output
         {
+            public string What { get; set; } = "";
             public List<string> Lines { get; } = new();
             public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
         }
@@ -88,13 +100,29 @@ namespace OWLReplaceVanillaItems
             var plugins = PluginsToPatch(state, settings, owlMod, Log);
             var wearers = settings.Outfits && settings.SkipOutfitsOfUniqueNpcs ? new UniqueWearers(state) : null;
             if (wearers != null) Log("Unique NPCs wear " + wearers.OutfitCount + " outfits: those are not patched.");
-            var existing = new ExistingPatches(state, inis.SkyPatcherFolder, inis.OtherInis);
-            Log("Read " + existing.FilesRead + " SkyPatcher INIs in Open World Loot's folders (Open World Loot's and patches for other mods): "
+            var existing = new ExistingPatches(state, inis.SkyPatcherFolder, inis.Inis);
+            Log("Read " + existing.FilesRead + " SkyPatcher INIs (Open World Loot's, its patches for other mods, and other mods'): "
                 + existing.RecordsCleared + " records they clear and " + existing.RecordsWithItems + " they replace or remove items in are left to them"
                 + (existing.LinesNotNamingRecords > 0 ? " (" + existing.LinesNotNamingRecords + " of their lines name no records by form or EditorID, and are not read)" : "") + ".");
+            var listedAdditions = existing.Additions.Where(a => owl.Targets.ContainsKey(a.Item)).ToList();
+            if (settings.SkyPatcherAdditions && listedAdditions.Count > 0)
+                Log("Other mods' SkyPatcher INIs add " + listedAdditions.Count + " items Open World Loot hands out, to "
+                    + listedAdditions.Select(a => a.Record).Distinct().Count() + " records: those are replaced too.");
+
+            // The plugins whose records may be patched, by the plugin that adds the record: for INI additions, which are
+            // patched in the records of Open World Loot's masters too
+            var only = new HashSet<ModKey>(settings.OnlyPlugins);
+            var skippedPlugins = new HashSet<ModKey>(settings.SkippedPlugins);
+            bool MayPatch(ModKey key) => !IsOwlPlugin(key) && !skippedPlugins.Contains(key) && (only.Count == 0 || only.Contains(key));
             var refs = new SkyPatcherRefs(state, settings.UseEditorIDs);
-            var outputs = new SortedDictionary<(string Folder, string Plugin), Output>();
-            int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0, deferredCount = 0, setCount = 0;
+            // (type folder, file inside this patcher's folder) -> its lines
+            var outputs = new SortedDictionary<(string Folder, string File), Output>();
+            int replacedCount = 0, recordCount = 0, keptCount = 0, uniqueCount = 0, outfitSkipCount = 0, deferredCount = 0, setCount = 0, owlRecordCount = 0;
+            // The plugins and the INIs whose items were replaced
+            var pluginSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var iniSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // (record, item) the lines for plugins replace: an INI adding the item there gets its own line all the same
+            var pluginReplaced = new HashSet<(FormKey Record, FormKey Item)>();
             var sets = settings.UseOutfitLists ? OutfitSets.Build(owlMod, linkCache) : null;
             if (sets != null) Log("Outfit lists: " + sets.SetCount + " sets of pieces in Open World Loot's outfit lists.");
             // Items given a themed list, per theme; records with items to replace that have a theme, per theme and record type
@@ -103,7 +131,12 @@ namespace OWLReplaceVanillaItems
 
             // Themed lists: the themes each record has. Placed copies are read from the plugins patched and the plugins that
             // add the containers (and, with place rules, the NPCs and the outfits' wearers) that hold items to replace
-            ThemeRules? themes = settings.UseThemedLists ? new ThemeRules(state, owl, settings.ThemeRules, Log) : null;
+            // The Alik'r come first, built in ("Alik'r lists"), unless a rule of the user's own is for them
+            var themeRules = new List<string>();
+            bool ownAlikr = settings.UseThemedLists && settings.ThemeRules.Any(r => r.Split('=')[0].Trim().Equals("Alikr", StringComparison.OrdinalIgnoreCase));
+            if (settings.AlikrLists && !ownAlikr) themeRules.Add(AlikrRule);
+            if (settings.UseThemedLists) themeRules.AddRange(settings.ThemeRules);
+            ThemeRules? themes = themeRules.Count > 0 ? new ThemeRules(state, owl, themeRules, Log) : null;
             if (themes != null && themes.RuleCount > 0)
             {
                 var containers = new HashSet<FormKey>();
@@ -130,6 +163,26 @@ namespace OWLReplaceVanillaItems
                                 foreach (var wearer in themes.WearersOf(outfit.FormKey)) scan.Add(wearer.ModKey);
                             }
                 }
+                // The records other mods' INIs add items to replace to: placed by the plugins that add them
+                if (settings.SkyPatcherAdditions)
+                    foreach (var addition in listedAdditions)
+                    {
+                        var key = addition.Record;
+                        if (!MayPatch(key.ModKey)) continue;
+                        switch (addition.Ini.Folder)
+                        {
+                            case "container" when settings.Containers:
+                                containers.Add(key);
+                                scan.Add(key.ModKey);
+                                break;
+                            case "npc" when settings.Npcs && themes.HasPlaceRules:
+                                scan.Add(key.ModKey);
+                                break;
+                            case "outfit" when settings.Outfits && themes.HasPlaceRules:
+                                foreach (var wearer in themes.WearersOf(key)) scan.Add(wearer.ModKey);
+                                break;
+                        }
+                    }
                 themes.ScanPlacements(state.LoadOrder.ListedOrder.Where(l => l.Mod != null && scan.Contains(l.ModKey)).Select(l => l.Mod!), containers);
                 Log("Themed lists: " + themes.RuleCount + " theme rules; " + themes.PlacedCopies + " placed copies read from " + scan.Count + " plugins; "
                     + containers.Count(c => themes.ContainerThemes(c).Length > 0) + " of the " + containers.Count + " containers with items to replace have a theme.");
@@ -148,26 +201,38 @@ namespace OWLReplaceVanillaItems
             }
 
             // The INI an existing patch handles the item in the record with: clearing the record, or replacing or removing
-            // the item (by form or keyword). Null when none does
-            string? HandledBy(ExistingPatches.RecordPatch? patch, FormKey item)
+            // the item (by form or keyword). Null when none does. An item an INI adds (addedBy) is handled only by the INI
+            // itself or one SkyPatcher applies after it, and not by its own clear, which comes before what the line adds
+            string? HandledBy(ExistingPatches.RecordPatch? patch, FormKey item, string? addedBy)
             {
                 if (patch == null) return null;
-                if (patch.ClearedBy != null) return patch.ClearedBy;
-                if (patch.Items.TryGetValue(item, out var file)) return file;
+                bool Reaches(string file, bool itself) => addedBy == null || (itself && file.Equals(addedBy, StringComparison.OrdinalIgnoreCase)) || IniFiles.AppliesAfter(file, addedBy);
+                if (patch.ClearedBy != null && Reaches(patch.ClearedBy, false)) return patch.ClearedBy;
+                if (patch.Items.TryGetValue(item, out var file) && Reaches(file, true)) return file;
                 foreach (var keyword in KeywordsOf(item))
-                    if (patch.Keywords.TryGetValue(keyword, out file)) return file;
+                    if (patch.Keywords.TryGetValue(keyword, out file) && Reaches(file, true)) return file;
                 return null;
             }
 
-            // Replaces the OWL-listed items in one record of the plugin. original gives the items of the record's original
-            // (the plugin that adds it), read only for a record the plugin overrides
-            void Process(Kind kind, ISkyrimModGetter mod, IMajorRecordGetter record, IEnumerable<FormKey> items, Func<HashSet<FormKey>?> original, string? skipReason,
+            // Replaces the OWL-listed items in one record, those a plugin's version of it holds or those an INI adds to it.
+            // original gives the items already there, which are left alone: for a plugin's record it overrides, the items
+            // of the record's original (the plugin that adds it); for an INI's additions, those of the winning record
+            void Process(Kind kind, Source source, bool overrides, IMajorRecordGetter record, IEnumerable<FormKey> items, Func<HashSet<FormKey>?> original, string? skipReason,
                 int[]? recordThemes = null, IReadOnlyDictionary<FormKey, int>? counts = null)
             {
-                string plugin = mod.ModKey.FileName;
                 string recordID = record.EditorID ?? record.FormKey.ToString();
-                string label = recordID + " (" + kind.Signature + ", " + plugin + ")";
-                bool overrides = record.FormKey.ModKey != mod.ModKey;
+                string label = recordID + " (" + kind.Signature + ", " + source.Name + ")";
+                // Open World Loot's own records (its lists) are what items are replaced by: what mods add to them is added
+                // to its loot
+                if (IsOwlPlugin(record.FormKey.ModKey))
+                {
+                    if (items.Any(owl.Targets.ContainsKey))
+                    {
+                        Log("  left alone " + label + ": an Open World Loot record");
+                        owlRecordCount++;
+                    }
+                    return;
+                }
                 bool setsHere = sets != null && kind.RemoveOp != null;
                 HashSet<FormKey>? originalItems = null;
                 bool originalRead = false;
@@ -203,13 +268,13 @@ namespace OWLReplaceVanillaItems
                         {
                             if (listed)
                             {
-                                Log("  kept in " + label + ": " + itemID + ", which the original record already has");
+                                Log("  kept in " + label + ": " + itemID + (source.AddedBy == null ? ", which the original record already has" : ", which the record already has without the INI"));
                                 keptCount++;
                             }
                             continue;
                         }
                     }
-                    if (HandledBy(patch, item) is string file)
+                    if (HandledBy(patch, item, source.AddedBy) is string file)
                     {
                         if (listed)
                         {
@@ -224,11 +289,20 @@ namespace OWLReplaceVanillaItems
 
                 Output OutputFor()
                 {
-                    if (!outputs.TryGetValue((kind.Folder, plugin), out var output)) outputs[(kind.Folder, plugin)] = output = new Output();
+                    // Two sources can share a file (a plugin and an INI named after it, two INIs of one name and depth):
+                    // they load under the same condition and after the same INIs
+                    if (!outputs.TryGetValue((kind.Folder, source.File), out var output)) outputs[(kind.Folder, source.File)] = output = new Output { What = source.What };
+                    else if (!output.What.Contains(source.What, StringComparison.Ordinal)) output.What += " and " + source.What;
                     return output;
                 }
-                void Write(string line, string comment)
+                void Write(string line, string comment, IEnumerable<FormKey> replaced)
                 {
+                    if (source.AddedBy != null) iniSources.Add(source.AddedBy);
+                    else
+                    {
+                        if (source.Plugin != null) pluginSources.Add(source.Plugin);
+                        foreach (var item in replaced) pluginReplaced.Add((record.FormKey, item));
+                    }
                     var output = OutputFor();
                     if (!output.Seen.Add(line)) return;
                     output.Lines.Add("; " + recordID + ": " + comment);
@@ -245,7 +319,7 @@ namespace OWLReplaceVanillaItems
                     {
                         string pieces = string.Join(", ", set.Pieces.Select(ItemID));
                         Write(kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(set.Pieces[0]) + kind.Separator + refs.Ref(sets.ListKey(list))
-                            + ":" + kind.RemoveOp + "=" + string.Join(",", set.Pieces.Skip(1).Select(refs.Ref)), pieces + " -> " + list);
+                            + ":" + kind.RemoveOp + "=" + string.Join(",", set.Pieces.Skip(1).Select(refs.Ref)), pieces + " -> " + list, set.Pieces);
                         Log("  " + label + ": " + pieces + " -> " + list + " (outfit set " + set.EditorID + ")");
                         inSets.UnionWith(set.Pieces);
                         setCount++;
@@ -260,13 +334,13 @@ namespace OWLReplaceVanillaItems
                     // The list of the first of the record's themes Open World Loot has one for the item under
                     string list = target;
                     string factionNote = "";
-                    if (recordThemes is { Length: > 0 } && themes!.ThemedList(target, recordThemes) is var (themed, theme))
+                    if (recordThemes is { Length: > 0 } && themes!.ThemedList(target, item, recordThemes) is var (themed, theme))
                     {
                         list = themed;
                         factionNote = " (" + theme + ")";
                         themedItems[theme] = themedItems.GetValueOrDefault(theme) + 1;
                     }
-                    Write(kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[list]), itemID + " -> " + list + factionNote);
+                    Write(kind.Filter + "=" + refs.Ref(record.FormKey) + ":" + kind.Op + "=" + refs.Ref(item) + kind.Separator + refs.Ref(owl.Lists[list]), itemID + " -> " + list + factionNote, new[] { item });
                     Log("  " + label + ": " + itemID + " -> " + list + factionNote);
                     replacedCount++;
                 }
@@ -289,45 +363,87 @@ namespace OWLReplaceVanillaItems
 
             ISkyrimModGetter? Defining(FormKey formKey) => state.LoadOrder.TryGetValue(formKey.ModKey)?.Mod;
 
+            string? UniqueNpc(INpcGetter winner) => settings.SkipUniqueNpcs && UniqueWearers.IsUnique(winner) ? "a unique NPC" : null;
+
             foreach (var mod in plugins)
             {
+                string plugin = mod.ModKey.FileName;
+                var source = new Source(plugin, plugin + ".ini", "in " + plugin + "'s records", plugin, null);
                 if (settings.LeveledLists)
                     foreach (var list in mod.LeveledItems)
-                        Process(LeveledListKind, mod, list, ItemsOf(list),
+                        Process(LeveledListKind, source, list.FormKey.ModKey != mod.ModKey, list, ItemsOf(list),
                             () => Defining(list.FormKey)?.LeveledItems.TryGetValue(list.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, null);
                 if (settings.Containers)
                     foreach (var container in mod.Containers)
-                        Process(ContainerKind, mod, container, ItemsOf(container),
+                        Process(ContainerKind, source, container.FormKey.ModKey != mod.ModKey, container, ItemsOf(container),
                             () => Defining(container.FormKey)?.Containers.TryGetValue(container.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, null,
                             themes?.ContainerThemes(container.FormKey));
                 if (settings.Outfits)
                     foreach (var outfit in mod.Outfits)
-                        Process(OutfitKind, mod, outfit, ItemsOf(outfit),
+                        Process(OutfitKind, source, outfit.FormKey.ModKey != mod.ModKey, outfit, ItemsOf(outfit),
                             () => Defining(outfit.FormKey)?.Outfits.TryGetValue(outfit.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null,
                             wearers?.Describe(outfit.FormKey), themes?.OutfitThemes(outfit.FormKey));
                 if (settings.Npcs)
                     foreach (var npc in mod.Npcs)
                     {
-                        string? unique = settings.SkipUniqueNpcs && linkCache.TryResolve<INpcGetter>(npc.FormKey, out var winner) && UniqueWearers.IsUnique(winner) ? "a unique NPC" : null;
-                        Process(NpcKind, mod, npc, ItemsOf(npc),
+                        string? unique = linkCache.TryResolve<INpcGetter>(npc.FormKey, out var winner) ? UniqueNpc(winner) : null;
+                        Process(NpcKind, source, npc.FormKey.ModKey != mod.ModKey, npc, ItemsOf(npc),
                             () => Defining(npc.FormKey)?.Npcs.TryGetValue(npc.FormKey, out var o) == true ? ItemsOf(o!).ToHashSet() : null, unique,
                             themes?.NpcThemes(npc.FormKey));
                     }
             }
 
-            foreach (var ((folder, plugin), output) in outputs)
+            // What other mods' SkyPatcher INIs add to records (WACCF's to vanilla outfits, ...), in the winning version of
+            // each, with the same checks as a plugin's items. Written to an INI named after the source, so it loads exactly
+            // when the source does, and nested deeper, so SkyPatcher applies it after
+            if (settings.SkyPatcherAdditions)
+                foreach (var group in existing.Additions.GroupBy(a => (a.Ini, a.Record)))
+                {
+                    var (ini, key) = group.Key;
+                    if (!MayPatch(key.ModKey)) continue;
+                    var items = group.Select(a => a.Item).ToList();
+                    string addedBy = Path.GetRelativePath(inis.SkyPatcherFolder, ini.Path);
+                    var source = new Source("added by " + addedBy, IniFiles.FileFor(ini), addedBy + " adds to records", null, addedBy);
+                    // The items the record already holds, but those the lines for plugins replace. None when the INI itself
+                    // (clear=true:formsToAdd=...) or one SkyPatcher applies before it clears the record
+                    string? clearedBy = existing.For(key)?.ClearedBy;
+                    bool wiped = clearedBy != null && !IniFiles.AppliesAfter(clearedBy, addedBy);
+                    HashSet<FormKey> Holds(IEnumerable<FormKey> held)
+                    {
+                        if (wiped) return new HashSet<FormKey>();
+                        var set = held.ToHashSet();
+                        set.RemoveWhere(item => pluginReplaced.Contains((key, item)));
+                        return set;
+                    }
+                    switch (ini.Folder)
+                    {
+                        case "leveledList" when settings.LeveledLists && linkCache.TryResolve<ILeveledItemGetter>(key, out var list):
+                            Process(LeveledListKind, source, true, list, items, () => Holds(ItemsOf(list)), null);
+                            break;
+                        case "container" when settings.Containers && linkCache.TryResolve<IContainerGetter>(key, out var container):
+                            Process(ContainerKind, source, true, container, items, () => Holds(ItemsOf(container)), null, themes?.ContainerThemes(key));
+                            break;
+                        case "outfit" when settings.Outfits && linkCache.TryResolve<IOutfitGetter>(key, out var outfit):
+                            Process(OutfitKind, source, true, outfit, items, () => Holds(ItemsOf(outfit)), wearers?.Describe(key), themes?.OutfitThemes(key));
+                            break;
+                        case "npc" when settings.Npcs && linkCache.TryResolve<INpcGetter>(key, out var npc):
+                            Process(NpcKind, source, true, npc, items, () => Holds(ItemsOf(npc)), UniqueNpc(npc), themes?.NpcThemes(key));
+                            break;
+                    }
+                }
+
+            foreach (var ((folder, file), output) in outputs)
             {
                 if (output.Lines.Count == 0) continue;
-                string path = inis.Write(folder, plugin, output.Lines, out bool changed);
+                string path = inis.Write(folder, file, output.What, output.Lines, out bool changed);
                 written.Add(path);
                 int count = output.Lines.Count / 2;
                 Log((changed ? "Wrote " : "Unchanged ") + path + " (" + count + (count == 1 ? " replacement)" : " replacements)"));
             }
 
             // INIs the xEdit script wrote for the plugins patched here: their lines still apply alongside these
-            var patched = new HashSet<string>(outputs.Keys.Select(k => k.Plugin), StringComparer.OrdinalIgnoreCase);
             foreach (var (plugin, files) in inis.XEditReplacements)
-                if (patched.Contains(plugin))
+                if (pluginSources.Contains(plugin))
                     foreach (var file in files)
                         Log("NOTE: " + file + " was written by the xEdit script OWL_Replace_Vanilla_Items.pas for " + plugin + ". This patcher's INIs replace it: remove it, or its lines (any for unique NPCs included) keep applying.");
 
@@ -336,9 +452,10 @@ namespace OWLReplaceVanillaItems
                     + (themedRecords.Count == 0 ? "none" : string.Join(", ", themedRecords.Select(r => r.Key + " " + r.Value)))
                     + "; items given a themed list: "
                     + (themedItems.Count == 0 ? "none" : string.Join(", ", themedItems.Select(t => t.Value + " " + t.Key))) + ".");
-            Log(replacedCount + " vanilla items replaced by OWL lists (" + themedItems.Values.Sum() + " by a themed list, " + setCount + " sets of pieces by an outfit list) in " + recordCount + " records of " + patched.Count + " plugins, "
-                + keptCount + " kept because the original record has them, " + deferredCount + " left to the patches in Open World Loot's folders, "
-                + uniqueCount + " unique NPCs and " + outfitSkipCount + " outfits unique NPCs wear skipped (all listed above).");
+            Log(replacedCount + " vanilla items replaced by OWL lists (" + themedItems.Values.Sum() + " by a themed list, " + setCount + " sets of pieces by an outfit list) in " + recordCount + " records, from "
+                + pluginSources.Count + " plugins and what " + iniSources.Count + " SkyPatcher INIs of other mods add; "
+                + keptCount + " kept because the record already has them, " + deferredCount + " left to other SkyPatcher INIs, "
+                + uniqueCount + " unique NPCs and " + outfitSkipCount + " outfits unique NPCs wear skipped, " + owlRecordCount + " Open World Loot records left alone (all listed above).");
         }
 
         // The plugins whose records are patched, in load order. Plugins Open World Loot already has patches for are patched

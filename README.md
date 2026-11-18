@@ -6,6 +6,8 @@ inventories, is replaced by that list, the way Open World Loot does it for the g
 follows OWL's tiers and picks up the items added to OWL's lists: an Iron Sword in a mod's bandit chest becomes
 `OWL_Weapon_Iron_Sword`, Steel Armor on its guards `OWL_Armor_Steel_Cuirass`.
 
+The same goes for the vanilla items other mods' SkyPatcher INIs add to records (see below).
+
 The changes are written as SkyPatcher INIs; the patch plugin gets no records.
 
 ## Which list
@@ -28,7 +30,10 @@ Setting "Outfit lists".
 **Themed lists.** Open World Loot also has lists for groups, named after them (`OWL_Armor_HideStudded_Cuirass_Stormcloak`,
 `OWL_Weapon_Elven_Sword_Thalmor`, `OWL_Armor_Iron_Cuirass_Town`), which it gives the vanilla gear lists of those groups.
 A record that matches a rule of the "Themed lists: rules" setting gets the theme's list for an item where Open World
-Loot has one, else the plain list. A rule is `Theme = kind patterns; kind patterns`, with these kinds:
+Loot has one, else the plain list. The theme's list is the plain list's name with `_<Theme>`, else a list with the theme
+in the material's place that holds the item itself: `OWL_Weapon_Alikr_Dagger` holds the iron and steel daggers, so an
+Alik'r's steel dagger goes there, and an Alik'r's ebony dagger stays with `OWL_Weapon_Ebony_Dagger`. A rule is
+`Theme = kind patterns; kind patterns`, with these kinds:
 
 - `faction`: the NPC, or the NPC template it takes its factions from, is a member (rank 0 or more) of a matching faction;
 - `class`, `race`: the NPC's, or its traits template's;
@@ -55,10 +60,39 @@ own, else its cell's: an NPC's themes, a faction's own, else those all its membe
 of the faction whose merchant chest it is (a blacksmith's chest: its merchant is a blacksmith). Placed copies are read
 from the plugins patched and the plugins that add the containers, NPCs and outfits' wearers that hold items to replace.
 
+**Alik'r lists.** The Alik'r, the Redguard warriors hunting in Skyrim, get Open World Loot's Alik'r lists for the items
+those hold, as Open World Loot gives the game's own (`EncAlikr...`, `MS08Alikr...`) in its INIs: a steel dagger becomes
+`OWL_Weapon_Alikr_Dagger`, a scimitar `OWL_Weapon_Alikr_1H`. A mod's Alik'r are found as members of the `MS08Alikr`
+factions or by Alikr in their EditorID (the Creation Club's Dead Man's Dread: `ccBGSSSE031_LvlAlikrMissileM`). This is a
+built-in first rule, `Alikr = faction MS08Alikr*; npc *Alikr*`, which applies with "Themed lists" on or off; a rule of
+your own for Alikr takes its place. Setting "Alik'r lists".
+
+## Items other mods' SkyPatcher INIs add
+
+Mods can add items to records without a plugin, through SkyPatcher INIs: `addToLLs`, `addOnceToLLs`, `addToContainers`,
+`addOnceToContainers`, `formsToAdd` (outfits), `objectsToAdd`, `addOnceToInventory`, and what `formsToReplace`,
+`replaceInContainers` and `objectsToReplace` put in. The vanilla items Open World Loot hands out that the INIs outside
+Open World Loot's folders add are replaced too, in the records of every plugin, the base game's included, and go through
+the same checks as a plugin's items:
+
+- unique NPCs, and the outfits unique NPCs wear, are skipped;
+- themed lists and outfit lists apply (a bandit given an Iron Sword gets `OWL_Weapon_Iron_Sword_Bandit`);
+- an item the record already holds is kept, as replacing it would replace that one too; a record the INI itself clears
+  first (`clear=true:formsToAdd=...`) holds nothing;
+- an item an INI SkyPatcher applies later clears, replaces or removes is left to it. SkyPatcher applies shallower INIs
+  first, then by path: Open World Loot's main INIs (`OWL\Main\...`) come after an INI directly in a mod's folder, so the
+  lists they clear and refill are left to them.
+
+The replacements go to an INI named after the source, so it loads exactly when the source does (only with its plugin
+active, for an INI named after one), and nested in `zz` folders one level deeper, so SkyPatcher applies it after the
+source. What Open World Loot's own INIs, and its patches for other mods, add is its choice and is left as it is. Setting
+"Items other mods' SkyPatcher INIs add".
+
 ## What is left alone
 
 - In a record the plugin overrides (a vanilla chest it adds to), an item the original record already has: SkyPatcher
   replaces every instance of the item in the record, so replacing it would change the game's own loot too.
+- Open World Loot's own records (its lists): what a mod adds to them, by plugin or INI, is added to its loot.
 - NPCs flagged Unique (in the version that wins), and the outfits any unique NPC wears, by default or to sleep (its own,
   or those of the NPC template it takes its inventory from). Both are settings.
 - Enchanted items, uniques and clothing: they are in no OWL list.
@@ -66,13 +100,14 @@ from the plugins patched and the plugins that add the containers, NPCs and outfi
   `Open World Loot - Heavy Armory Patch.esp`, ...), whatever the settings say.
 - By default, Open World Loot's masters (the base game and the Creation Club plugins it requires), which its own INIs
   cover.
-- What the SkyPatcher INIs already in Open World Loot's folders (`SKSE\Plugins\SkyPatcher\<type>\OWL\...`) do, from
-  Open World Loot or patches for other mods: a record one clears gets nothing more, and an item one replaces or removes
-  in a record (by form, by count or by keyword) is not replaced there. Plugins with such patches are patched around them.
-  Only lines that name their records are read: by form (`filterByLLs`, `filterByContainers`, `filterByOutfits`,
-  `filterByNpcs`) or by EditorID (`filterByEditorIdContains`, `...Or`, `...Excluded`). An INI named after a plugin counts
-  only with that plugin active, as SkyPatcher reads it only then. This patcher's own INIs and those of the xEdit script
-  `OWL_Replace_Vanilla_Items.pas`, which they replace, are not read.
+- What the SkyPatcher INIs already installed do: Open World Loot's and its patches for other mods (in
+  `SKSE\Plugins\SkyPatcher\<type>\OWL\...`), and other mods' (WACCF's, ...). A record one clears gets nothing more from
+  its plugins, and an item one replaces or removes in a record (by form, by count or by keyword) is not replaced there.
+  Plugins with such patches are patched around them. Only lines that name their records are read: by form
+  (`filterByLLs`, `filterByContainers`, `filterByOutfits`, `filterByNpcs`) or by EditorID (`filterByEditorIdContains`,
+  `...Or`, `...Excluded`). An INI named after a plugin counts only with that plugin active, as SkyPatcher reads it only
+  then. This patcher's own INIs and those of the xEdit script `OWL_Replace_Vanilla_Items.pas`, which they replace, are not
+  read.
 
 Everything replaced, kept and skipped is listed in the Synthesis log and in `OWL replacements.txt` in the patcher's data
 folder.
@@ -86,8 +121,11 @@ One INI per plugin and record type, named after the plugin so it loads only with
     SKSE\Plugins\SkyPatcher\outfit\OWL\Patches\OWL Replace Vanilla Items\<plugin>.ini        filterByOutfits=...:formsToReplace=item=list
     SKSE\Plugins\SkyPatcher\npc\OWL\Patches\OWL Replace Vanilla Items\<plugin>.ini           filterByNpcs=...:objectsToReplace=item~list
 
-They are rewritten on every run (a file whose text is the same is left untouched), and those of plugins no longer patched
-are removed. Under Mod Organizer they land in Overwrite (or the mod Synthesis's new files go to).
+The replacements of what another mod's INI adds go in the same folders, named after that INI (`WACCF_Outfits.ini`,
+and nested in one `zz` folder more for each folder past two the source is in: `zz\<name>.ini` for `Mod\A\B\<name>.ini`).
+
+They are rewritten on every run (a file whose text is the same is left untouched), and those no longer written are
+removed. Under Mod Organizer they land in Overwrite (or the mod Synthesis's new files go to).
 
 The folder is the patcher's own, so the leveledList INIs of `OWL_Add_Items_To_Lists.pas`
 (`leveledList\OWL\Patches\<plugin>\<plugin>.ini`) are never touched. INIs the xEdit script `OWL_Replace_Vanilla_Items.pas`
